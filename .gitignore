@@ -1,0 +1,11 @@
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+# Generated karaoke projects (audio, stems, renders)
+projects/
+models/
+.env
