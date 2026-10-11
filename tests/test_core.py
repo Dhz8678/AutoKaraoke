@@ -112,3 +112,84 @@ def test_retext_line_redistributes_on_count_change():
     sy = line.syllables()
     assert len(sy) == 2 and sy[0].start == start and sy[-1].end <= end + 1e-9
     assert all(s.confidence == 0.2 for s in sy)
+
+
+def test_split_into_lines_keeps_timing_when_count_matches():
+    from autokaraoke.text.edit import split_into_lines, to_notation
+
+    line = _project().lines[0]
+    before = [(s.start, s.end) for s in line.syllables()]
+    lines = split_into_lines(line, "Nel blu\ndi|pin|to di blu", "it")
+    assert [ln.text for ln in lines] == ["Nel blu", "dipinto di blu"]
+    assert [(s.start, s.end) for ln in lines for s in ln.syllables()] == before
+    assert lines[1].start == before[2][0] and lines[0].end == before[1][1]
+    assert to_notation(lines[1]) == "di|pin|to di blu"
+
+
+def test_split_into_lines_redistributes_on_count_change():
+    from autokaraoke.text.edit import split_into_lines
+
+    line = _project().lines[0]
+    start, end = line.span()
+    lines = split_into_lines(line, "Nel blu\ndipinto\nancora", "it")
+    assert len(lines) == 3
+    assert lines[0].start == start and lines[-1].end <= end + 1e-9
+    spans = [ln.span() for ln in lines]
+    assert all(a[1] <= b[0] + 1e-9 for a, b in zip(spans, spans[1:]))
+
+
+def test_merge_lines_and_new_line():
+    from autokaraoke.text.edit import merge_lines, new_line
+
+    p = _project()
+    a, b = p.lines[0], p.lines[1]
+    merged = merge_lines(a, b)
+    assert merged.text == f"{a.text} {b.text}"
+    assert merged.span() == (a.span()[0], b.span()[1])
+
+    gap = new_line("oh oh", "it", p.lines[2], p.lines[3])  # 12.25 -> reprise at 60 s
+    sa, sb = gap.span()
+    assert sa >= p.lines[2].span()[1] and sb <= p.lines[3].span()[0]
+    assert new_line("oh", "it").span() is None  # no neighbours: untimed
+
+
+def test_split_and_merge_syllable():
+    from autokaraoke.project import Syllable, Word
+    from autokaraoke.text.edit import merge_syllable_with_next, split_syllable
+
+    w = Word("ciao", [Syllable("ciao", 1.0, 2.0)])
+    split_syllable(w, 0, 2)
+    assert [(s.text, s.start, s.end) for s in w.syllables] == [("ci", 1.0, 1.5), ("ao", 1.5, 2.0)]
+    merge_syllable_with_next(w, 0)
+    assert [(s.text, s.start, s.end) for s in w.syllables] == [("ciao", 1.0, 2.0)]
+
+
+def test_backing_flag_roundtrip(tmp_path):
+    p = _project()
+    p.lines[1].backing = True
+    p.render = {"layout": "scroll"}
+    p.save(tmp_path)
+    q = Project.load(tmp_path)
+    assert q.lines[1].backing and not q.lines[0].backing and q.render == {"layout": "scroll"}
+
+
+def test_line_span_ignores_untimed_syllables():
+    line = _project().lines[0]
+    sy = line.syllables()
+    sy[-1].start = sy[-1].end = None
+    sy[-2].end = None
+    assert line.span() == (sy[0].start, sy[-3].end)
+
+
+def test_backing_envelope():
+    from autokaraoke.mix import FADE, backing_spans, envelope
+
+    p = _project()
+    p.lines[1].backing = True
+    spans = backing_spans(p)
+    assert len(spans) == 1
+    a, b = spans[0]
+    env = envelope(spans, 70 * 100, 100)  # 100 Hz "audio" for the test
+    assert env[int(a * 100) + 1] == 1.0 and env[int(b * 100) - 1] == 1.0
+    assert env[int((a - FADE) * 100) - 2] == 0.0 and env[int((b + FADE) * 100) + 2] == 0.0
+    assert 0 < env[int((a - FADE / 2) * 100)] < 1

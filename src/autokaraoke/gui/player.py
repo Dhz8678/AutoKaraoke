@@ -32,14 +32,17 @@ class Player(QObject):
         # before that is ignored by QMediaPlayer and playback would restart from 0.
         self._pending: tuple[float, bool] | None = None
 
-    def load(self, path: Path | None, keep_position: bool = True) -> None:
-        if path == self._source:
+    def load(self, path: Path | None, keep_position: bool = True, reload: bool = False) -> None:
+        """``reload`` re-reads the same file (it was rewritten)."""
+        if path == self._source and not reload:
             return
         pos, playing = self.position(), self.is_playing()
         if self._pending is not None:
             pos, playing = self._pending
         self._source = path
         self._pending = None
+        if reload:
+            self._player.setSource(QUrl())
         self._player.setSource(QUrl.fromLocalFile(str(path)) if path else QUrl())
         if keep_position and path:
             self._pending = (pos, playing)

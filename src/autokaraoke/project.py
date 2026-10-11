@@ -46,6 +46,8 @@ class Line:
     end: float | None = None
     # Review hint shown in the editor, e.g. what the transcript heard instead.
     note: str = ""
+    # Backing vocals (choir, yodel, ...) kept in the karaoke mix instead of being sung.
+    backing: bool = False
 
     def syllables(self) -> list[Syllable]:
         return [s for w in self.words for s in w.syllables]
@@ -75,6 +77,8 @@ class Project:
     audio_instrumental: str = ""
     lyrics_source: str = ""  # "lrclib-synced", "lrclib-plain", "manual", ...
     lines: list[Line] = field(default_factory=list)
+    # Video style overrides (see export.ass.AssStyle); empty = defaults.
+    render: dict = field(default_factory=dict)
     version: int = FORMAT_VERSION
 
     # Not serialized: directory the project lives in.
@@ -103,6 +107,7 @@ class Project:
                 start=ln.get("start"),
                 end=ln.get("end"),
                 note=ln.get("note", ""),
+                backing=ln.get("backing", False),
                 words=[
                     Word(text=w["text"], syllables=[Syllable(**s) for s in w["syllables"]])
                     for w in ln.get("words", [])

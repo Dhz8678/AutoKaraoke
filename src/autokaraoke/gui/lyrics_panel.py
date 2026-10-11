@@ -1,12 +1,15 @@
-"""List of lyric lines with timing and review status; double-click to edit text."""
+"""List of lyric lines with timing and review status; double-click to edit text.
+
+Backing lines (kept in the karaoke mix) are shown in blue.
+"""
 
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QBrush
-from PySide6.QtWidgets import QListWidget, QListWidgetItem
+from PySide6.QtWidgets import QAbstractItemView, QListWidget, QListWidgetItem
 
-from autokaraoke.gui.timeline import confidence_color
+from autokaraoke.gui.timeline import BACKING, confidence_color
 from autokaraoke.project import Project
 from autokaraoke.text.edit import to_notation
 
@@ -26,9 +29,12 @@ class LyricsPanel(QListWidget):
         super().__init__(parent)
         self.project: Project | None = None
         self.setAlternatingRowColors(True)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         self.itemClicked.connect(lambda it: self.lineActivated.emit(self.row(it)))
         self.itemDoubleClicked.connect(lambda it: self.editRequested.emit(self.row(it)))
-        self.setToolTip("Click: go to line. Double-click: edit text and syllables.")
+        self.setToolTip("Click: go to line. Double-click / Enter: edit text and syllables.\n"
+                        "Right-click: insert, delete, merge lines, mark as backing vocals.")
 
     def set_project(self, project: Project | None) -> None:
         self.project = project
@@ -41,9 +47,15 @@ class LyricsPanel(QListWidget):
             return
         for line in self.project.lines:
             sylls = line.syllables()
-            start = sylls[0].start if sylls else line.start
+            span = line.span()
+            start = span[0] if span else line.start
             mark = "  ⚠" if line.note else ""
-            item = QListWidgetItem(f"{fmt_time(start)}   {to_notation(line).replace('|', '·')}{mark}")
+            text = to_notation(line).replace("|", "·")
+            if line.backing:
+                text = f"♪ ({text})"
+            item = QListWidgetItem(f"{fmt_time(start)}   {text}{mark}")
+            if line.backing:
+                item.setForeground(QBrush(BACKING))
             worst = min((s.confidence for s in sylls), default=1.0)
             tips = []
             if worst < 0.5:
@@ -51,6 +63,8 @@ class LyricsPanel(QListWidget):
                 color.setAlpha(70)
                 item.setBackground(QBrush(color))
                 tips.append("Some syllables need review")
+            if line.backing:
+                tips.append("Backing vocals: kept in the karaoke mix, shown in the video as backing")
             if line.note:
                 tips.append(line.note + " (double-click to edit the line)")
             if tips:
@@ -58,6 +72,10 @@ class LyricsPanel(QListWidget):
             self.addItem(item)
         if 0 <= row < self.count():
             self.setCurrentRow(row)
+
+    def selected_rows(self) -> list[int]:
+        rows = sorted({i.row() for i in self.selectedIndexes()})
+        return rows or ([self.currentRow()] if self.currentRow() >= 0 else [])
 
     def highlight(self, index: int) -> None:
         if 0 <= index < self.count() and index != self.currentRow():

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QBrush, QColor
+from PySide6.QtGui import QBrush, QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog,
     QCheckBox,
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
     QTreeWidget,
     QTreeWidgetItem,
@@ -106,6 +107,45 @@ class ProposalDialog(QDialog):
             it = self.tree.topLevelItem(i)
             it.data(0, Qt.ItemDataRole.UserRole).accepted = it.checkState(0) == Qt.CheckState.Checked
         super().accept()
+
+
+class LineEditDialog(QDialog):
+    """Edit one lyric line in syllable notation; each extra text line becomes a new lyric line."""
+
+    def __init__(self, title: str, text: str, note: str = "", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        v = QVBoxLayout(self)
+        info = QLabel(
+            "Words separated by spaces, syllables by '|' (e.g. <tt>cuo|re mi|o</tt>). "
+            "Without any '|' the words are split automatically.<br>"
+            "Press Enter for a new line to <b>split</b> it in two or more lines. "
+            "Timings are kept if the number of syllables does not change.<br>"
+            "Ctrl+Enter to apply."
+        )
+        info.setWordWrap(True)
+        v.addWidget(info)
+        if note:
+            warn = QLabel(f"⚠ {note}")
+            warn.setWordWrap(True)
+            warn.setStyleSheet("color: #e0a030")
+            v.addWidget(warn)
+        self.edit = QPlainTextEdit(text)
+        f = self.edit.font()
+        f.setPointSizeF(f.pointSizeF() * 1.25)
+        self.edit.setFont(f)
+        self.edit.selectAll()
+        v.addWidget(self.edit, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
+                                   | QDialogButtonBox.StandardButton.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        QShortcut(QKeySequence("Ctrl+Return"), self, self.accept)
+        v.addWidget(buttons)
+        self.resize(640, 220)
+
+    def text(self) -> str:
+        return self.edit.toPlainText().strip()
 
 
 def save_settings(values: dict[str, str]) -> None:

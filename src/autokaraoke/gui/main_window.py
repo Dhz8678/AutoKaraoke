@@ -5,14 +5,14 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-import numpy as np
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt, QTimer
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
@@ -20,28 +20,34 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QSlider,
     QSpinBox,
     QSplitter,
+    QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
 )
 
 from autokaraoke import config, steps
-from autokaraoke.gui.dialogs import ProposalDialog, SettingsDialog
+from autokaraoke.gui.dialogs import LineEditDialog, ProposalDialog, SettingsDialog
 from autokaraoke.gui.jobs import Job
 from autokaraoke.gui.lyrics_panel import LyricsPanel, fmt_time
 from autokaraoke.gui.player import Player
 from autokaraoke.gui.preview import KaraokePreview, current_line_index
-from autokaraoke.gui.timeline import Timeline, compute_peaks
+from autokaraoke.gui.timeline import HINTS, Timeline, spectrogram_image
 from autokaraoke.project import Project
-from autokaraoke.text.edit import retext_line, to_notation
+from autokaraoke.text import edit as text_edit
+from autokaraoke.text.edit import to_notation
 
 UNDO_LIMIT = 100
 MIN_DUR = 0.04
+MIX_TRACK = "mix"  # track combo data for the generated karaoke mix
+NUDGE = 0.01
 
 
 class NewProjectDialog(QDialog):
@@ -101,7 +107,12 @@ class MainWindow(QMainWindow):
         self.tap_index = -1
         self.tap_prev = -1  # index of the last tapped syllable (Tap mode)
         self.tap_pressed = False
-        self.peaks_cache: dict[str, np.ndarray] = {}
+        # (start, end, loop): stop or loop playback at ``end``.
+        self.play_range: tuple[float, float, bool] | None = None
+        # Audio analysis per file path: (peaks, spectrogram image, onsets).
+        self.analysis: dict[str, tuple] = {}
+        self.bg_jobs: set[Job] = set()
+        self.settings = QSettings("AutoKaraoke", "AutoKaraoke")
 
         self.player = Player(self)
         self.timeline = Timeline()
@@ -115,6 +126,7 @@ class MainWindow(QMainWindow):
         self._build_actions()
         self._build_layout()
         self._connect()
+        self._restore_settings()
 
         self.timer = QTimer(self)
         self.timer.setInterval(16)
@@ -154,6 +166,22 @@ class MainWindow(QMainWindow):
         self.act_render = self._action("Render video…", self.render, "Ctrl+R")
         self.act_export = self._action("Export…", self.export, "Ctrl+E", "Export ASS or enhanced LRC")
 
+        # Line actions work on the lines selected in the lyrics list (shortcuts active there).
+        self.act_line_edit = self._action("Edit line…", lambda: self.edit_line(self.lyrics.currentRow()),
+                                          "Return", "Edit text and syllables; new lines split the line")
+        self.act_line_insert = self._action("Insert line below…", self.insert_line, "Insert")
+        self.act_line_delete = self._action("Delete lines", self.delete_lines, "Delete")
+        self.act_line_merge = self._action("Merge with next line", self.merge_lines, "Ctrl+J",
+                                           "Join the selected lines (or the line and the next one)")
+        self.act_line_backing = self._action(
+            "Backing vocals on/off", self.toggle_backing, "B",
+            "Backing lines (choir, yodel…) stay in the karaoke audio and are shown as backing")
+        self.line_actions = [self.act_line_edit, self.act_line_insert, self.act_line_delete,
+                             self.act_line_merge, self.act_line_backing]
+        for a in self.line_actions:
+            a.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            self.lyrics.addAction(a)
+
         tb = self.addToolBar("Main")
         tb.setMovable(False)
         for a in (self.act_new, self.act_open, self.act_save):
@@ -182,22 +210,88 @@ class MainWindow(QMainWindow):
         edit_menu = self.menuBar().addMenu("&Edit")
         edit_menu.addAction(self.act_undo)
         edit_menu.addAction(self.act_redo)
+        lines_menu = self.menuBar().addMenu("&Lines")
+        for a in self.line_actions:
+            lines_menu.addAction(a)
         help_menu = self.menuBar().addMenu("&Help")
         help_menu.addAction(self._action("Keyboard shortcuts", self.show_help, "F1"))
 
     def _build_layout(self) -> None:
+        # Row 1: playback.
         transport = QWidget()
         h = QHBoxLayout(transport)
-        h.setContentsMargins(6, 2, 6, 2)
+        h.setContentsMargins(6, 2, 6, 0)
         self.btn_play = QToolButton()
         self.btn_play.setText("▶")
         self.btn_play.setToolTip("Play / pause (Space)")
         self.time_label = QLabel("00:00.00")
         self.time_label.setMinimumWidth(80)
-        self.speed = QComboBox()
-        for r in (1.0, 0.75, 0.5):
-            self.speed.addItem(f"{r:g}×", r)
+        self.speed = QSlider(Qt.Orientation.Horizontal)
+        self.speed.setRange(5, 30)  # × 5 %
+        self.speed.setValue(20)
+        self.speed.setPageStep(1)
+        self.speed.setFixedWidth(140)
+        self.speed.setToolTip("Playback speed, 25–150 % (pitch is preserved)")
+        self.speed_label = QToolButton()
+        self.speed_label.setText("100%")
+        self.speed_label.setToolTip("Reset to 100 %")
+        self.speed_label.setMinimumWidth(48)
         self.track = QComboBox()
+        self.track.setToolTip("Audio to play and to show in the timeline")
+        self.view = QComboBox()
+        self.view.addItem("Waveform", "wave")
+        self.view.addItem("Spectrogram", "spec")
+        self.view.addItem("Spectrogram + wave", "both")
+        self.view.setToolTip("Timeline display. In the spectrogram, consonants (t, k, s, p…) show as "
+                             "bright vertical streaks: good syllable starts")
+        self.snap = QToolButton()
+        self.snap.setText("Snap")
+        self.snap.setCheckable(True)
+        self.snap.setToolTip("Snap syllable starts to detected attacks (cyan ticks) while dragging")
+        zoom_in, zoom_out = QToolButton(), QToolButton()
+        zoom_in.setText("+")
+        zoom_out.setText("−")
+        zoom_in.clicked.connect(lambda: self.canvas.zoom(1.4))
+        zoom_out.clicked.connect(lambda: self.canvas.zoom(1 / 1.4))
+        for wdg in (self.btn_play, self.time_label, QLabel("Speed"), self.speed, self.speed_label,
+                    QLabel("Audio"), self.track, QLabel("View"), self.view, self.snap):
+            h.addWidget(wdg)
+        h.addStretch()
+        h.addWidget(QLabel("Zoom"))
+        h.addWidget(zoom_out)
+        h.addWidget(zoom_in)
+
+        # Row 2: selected syllable and tap sync.
+        inspector = QWidget()
+        h = QHBoxLayout(inspector)
+        h.setContentsMargins(6, 0, 6, 2)
+        self.syl_label = QLabel("No syllable selected")
+        self.syl_label.setMinimumWidth(200)
+        self.syl_start = QDoubleSpinBox()
+        self.syl_end = QDoubleSpinBox()
+        for spin, tip in ((self.syl_start, "Start of the selected syllable (s)"),
+                          (self.syl_end, "End of the selected syllable (s)")):
+            spin.setDecimals(2)
+            spin.setSingleStep(0.01)
+            spin.setRange(0, 24 * 3600)
+            spin.setKeyboardTracking(False)
+            spin.setToolTip(tip + "; arrows step 10 ms")
+        self.btn_set_start = QToolButton()
+        self.btn_set_start.setText("[ Start here")
+        self.btn_set_start.setToolTip("Set the start at the playhead ([)")
+        self.btn_set_end = QToolButton()
+        self.btn_set_end.setText("End here ]")
+        self.btn_set_end.setToolTip("Set the end at the playhead (])")
+        self.btn_play_syl = QToolButton()
+        self.btn_play_syl.setText("▶ Syllable")
+        self.btn_play_syl.setToolTip("Play the selected syllable (P)")
+        self.btn_play_line = QToolButton()
+        self.btn_play_line.setText("▶ Line")
+        self.btn_play_line.setToolTip("Play the line of the selected syllable")
+        self.btn_loop = QToolButton()
+        self.btn_loop.setText("⟲ Loop line")
+        self.btn_loop.setCheckable(True)
+        self.btn_loop.setToolTip("Repeat the line of the selected syllable (L)")
         self.tap_mode = QComboBox()
         self.tap_mode.addItem("Off", "")
         self.tap_mode.addItem("Hold: press=start, release=end", "hold")
@@ -208,54 +302,101 @@ class MainWindow(QMainWindow):
         self.latency.setSuffix(" ms")
         self.latency.setValue(60)
         self.latency.setToolTip("Reaction-time compensation subtracted from taps")
-        zoom_in, zoom_out = QToolButton(), QToolButton()
-        zoom_in.setText("+")
-        zoom_out.setText("−")
-        zoom_in.clicked.connect(lambda: self.canvas.zoom(1.4))
-        zoom_out.clicked.connect(lambda: self.canvas.zoom(1 / 1.4))
-        for wdg in (self.btn_play, self.time_label, QLabel("Speed"), self.speed, QLabel("Audio"),
-                    self.track, QLabel("Tap sync"), self.tap_mode, self.latency):
+        for wdg in (self.syl_label, QLabel("Start"), self.syl_start, QLabel("End"), self.syl_end,
+                    self.btn_set_start, self.btn_set_end, self.btn_play_syl, self.btn_play_line,
+                    self.btn_loop):
             h.addWidget(wdg)
         h.addStretch()
-        h.addWidget(QLabel("Zoom"))
-        h.addWidget(zoom_out)
-        h.addWidget(zoom_in)
+        for wdg in (QLabel("Tap sync"), self.tap_mode, self.latency):
+            h.addWidget(wdg)
 
-        top = QSplitter(Qt.Orientation.Horizontal)
-        top.addWidget(self.lyrics)
-        right = QSplitter(Qt.Orientation.Vertical)
-        right.addWidget(self.preview)
-        right.addWidget(self.log_view)
-        right.setSizes([260, 100])
-        top.addWidget(right)
-        top.setSizes([420, 700])
+        self.hint = QLabel()
+        self.hint.setStyleSheet("color: #9a9aa8; padding: 0 6px")
 
-        main = QSplitter(Qt.Orientation.Vertical)
-        main.addWidget(top)
+        lyrics_box = QWidget()
+        v = QVBoxLayout(lyrics_box)
+        v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
+        lines_bar = QToolBar()
+        lines_bar.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+        for a in self.line_actions:
+            lines_bar.addAction(a)
+        v.addWidget(lines_bar)
+        v.addWidget(self.lyrics, 1)
+
+        self.top_split = QSplitter(Qt.Orientation.Horizontal)
+        self.top_split.addWidget(lyrics_box)
+        self.right_split = QSplitter(Qt.Orientation.Vertical)
+        self.right_split.addWidget(self.preview)
+        self.right_split.addWidget(self.log_view)
+        self.right_split.setSizes([260, 100])
+        self.top_split.addWidget(self.right_split)
+        self.top_split.setSizes([460, 700])
+
+        self.main_split = QSplitter(Qt.Orientation.Vertical)
+        self.main_split.addWidget(self.top_split)
         bottom = QWidget()
         v = QVBoxLayout(bottom)
         v.setContentsMargins(0, 0, 0, 0)
+        v.setSpacing(0)
         v.addWidget(transport)
-        v.addWidget(self.timeline)
-        main.addWidget(bottom)
-        main.setStretchFactor(0, 1)
-        main.setStretchFactor(1, 0)
-        self.setCentralWidget(main)
-        self.resize(1280, 800)
+        v.addWidget(inspector)
+        v.addWidget(self.timeline, 1)
+        v.addWidget(self.hint)
+        self.main_split.addWidget(bottom)
+        self.main_split.setStretchFactor(0, 1)
+        self.main_split.setStretchFactor(1, 1)
+        self.main_split.setSizes([420, 380])
+        self.setCentralWidget(self.main_split)
+        self.resize(1280, 860)
 
     def _connect(self) -> None:
         self.btn_play.clicked.connect(self.player.toggle)
         self.player.stateChanged.connect(lambda playing: self.btn_play.setText("⏸" if playing else "▶"))
-        self.speed.currentIndexChanged.connect(lambda: self.player.set_rate(self.speed.currentData()))
+        self.speed.valueChanged.connect(self._speed_changed)
+        self.speed_label.clicked.connect(lambda: self.speed.setValue(20))
         self.track.currentIndexChanged.connect(self._load_track)
+        self.view.currentIndexChanged.connect(lambda: self.canvas.set_view_mode(self.view.currentData()))
+        self.snap.toggled.connect(self._snap_toggled)
         self.tap_mode.currentIndexChanged.connect(self._tap_mode_changed)
-        self.canvas.seekRequested.connect(self.player.seek)
+        self.canvas.seekRequested.connect(self._seek)
         self.canvas.playFromRequested.connect(self._play_from)
         self.canvas.aboutToEdit.connect(self.push_undo)
         self.canvas.edited.connect(self._after_edit)
         self.canvas.selectionChanged.connect(self._selection_changed)
+        self.canvas.hintChanged.connect(self.hint.setText)
+        self.canvas.contextRequested.connect(self._syllable_menu)
+        self.syl_start.valueChanged.connect(lambda v: self._edge_edited("start", v))
+        self.syl_end.valueChanged.connect(lambda v: self._edge_edited("end", v))
+        self.btn_set_start.clicked.connect(lambda: self._set_boundary_at_playhead(True))
+        self.btn_set_end.clicked.connect(lambda: self._set_boundary_at_playhead(False))
+        self.btn_play_syl.clicked.connect(self.play_syllable)
+        self.btn_play_line.clicked.connect(lambda: self.play_line(loop=False))
+        self.btn_loop.toggled.connect(self._loop_toggled)
         self.lyrics.lineActivated.connect(self._goto_line)
         self.lyrics.editRequested.connect(self.edit_line)
+
+    def _restore_settings(self) -> None:
+        s = self.settings
+        for key, split in (("split/main", self.main_split), ("split/top", self.top_split),
+                           ("split/right", self.right_split)):
+            if s.value(key) is not None:
+                split.restoreState(s.value(key))
+        self.canvas.syl_h = int(s.value("timeline/syl_h", self.canvas.syl_h))
+        self.view.setCurrentIndex(max(0, self.view.findData(s.value("timeline/view", "wave"))))
+        self.snap.setChecked(s.value("timeline/snap", "false") == "true")
+        self.latency.setValue(int(s.value("tap/latency", 60)))
+        self.hint.setText(HINTS[""])
+
+    def _save_settings(self) -> None:
+        s = self.settings
+        s.setValue("split/main", self.main_split.saveState())
+        s.setValue("split/top", self.top_split.saveState())
+        s.setValue("split/right", self.right_split.saveState())
+        s.setValue("timeline/syl_h", self.canvas.syl_h)
+        s.setValue("timeline/view", self.view.currentData())
+        s.setValue("timeline/snap", "true" if self.snap.isChecked() else "false")
+        s.setValue("tap/latency", self.latency.value())
 
     # ---- project ----------------------------------------------------------
 
@@ -283,11 +424,25 @@ class MainWindow(QMainWindow):
         self.project = proj
         self.dirty = False
         self.tap_mode.setCurrentIndex(0)
-        self.peaks_cache.clear()
+        self.play_range = None
+        self.btn_loop.setChecked(False)
+        self.analysis.clear()
         self.canvas.set_project(proj, None)
         self.preview.set_project(proj)
         self.lyrics.set_project(proj)
         self.timeline._sync_scrollbar()
+        self._refresh_tracks(keep=False)
+        if proj and proj.audio_vocals and proj.abspath(proj.audio_vocals).exists():
+            self._analyse(str(proj.abspath(proj.audio_vocals)))  # its attacks are always shown
+        self._update_title()
+        self._set_enabled()
+        self._update_status()
+        self._update_inspector()
+
+    def _refresh_tracks(self, keep: bool = True) -> None:
+        """Fill the audio combo; the karaoke mix is offered once some line is marked as backing."""
+        proj = self.project
+        current = self.track.currentData() if keep else None
         self.track.blockSignals(True)
         self.track.clear()
         if proj:
@@ -295,26 +450,83 @@ class MainWindow(QMainWindow):
                                ("Instrumental", proj.audio_instrumental)):
                 if rel and (proj.path / rel).exists():
                     self.track.addItem(label, str(proj.path / rel))
+            if proj.audio_vocals and proj.audio_instrumental and any(ln.backing for ln in proj.lines):
+                self.track.addItem("Karaoke (instrumental + backing)", MIX_TRACK)
+        idx = self.track.findData(current) if current is not None else -1
+        self.track.setCurrentIndex(max(idx, 0))
         self.track.blockSignals(False)
-        self._load_track()
-        self._update_title()
-        self._set_enabled()
-        self._update_status()
+        if not keep or idx < 0:
+            self._load_track()
 
-    def _load_peaks(self, path: str) -> np.ndarray | None:
-        import soundfile as sf
+    def _analyse(self, path: str) -> None:
+        """Waveform, spectrogram and attacks of an audio file, computed in the background."""
+        if path in self.analysis or any(j.title == path for j in self.bg_jobs):
+            self._apply_analysis()
+            return
+        from autokaraoke.spectrum import load_analysis
 
-        if path not in self.peaks_cache:
-            if not Path(path).exists():
-                return None
-            audio, sr = sf.read(path, dtype="float32", always_2d=True)
-            self.peaks_cache[path] = compute_peaks(audio.mean(axis=1), sr)
-        return self.peaks_cache[path]
+        job = Job(path, lambda log: load_analysis(path), self)
+        job.succeeded.connect(lambda a, p=path: self._analysis_ready(p, a))
+        job.failed.connect(lambda err: self.log(f"Audio analysis failed: {err}"))
+        job.finished.connect(lambda j=job: self.bg_jobs.discard(j))
+        self.bg_jobs.add(job)
+        job.start()
+
+    def _analysis_ready(self, path: str, a) -> None:
+        if self.project is None or not path.startswith(str(self.project.path)):
+            return  # finished after another project was opened
+        self.analysis[path] = (a.peaks, spectrogram_image(a.spec), a.onsets)
+        self._apply_analysis()
+
+    def _current_audio(self) -> str | None:
+        data = self.track.currentData()
+        if data == MIX_TRACK and self.project:
+            return str(self.project.path / "karaoke_mix.flac")
+        return data
+
+    def _apply_analysis(self) -> None:
+        proj = self.project
+        cur = self.analysis.get(self._current_audio() or "")
+        voc = self.analysis.get(str(proj.abspath(proj.audio_vocals))) if proj and proj.audio_vocals else None
+        onsets = (voc or cur or (None, None, None))[2]
+        if cur:
+            self.canvas.set_signal(cur[0], cur[1], onsets)
+        else:
+            self.canvas.set_signal(None, None, onsets)
 
     def _load_track(self) -> None:
         data = self.track.currentData()
+        if data == MIX_TRACK:
+            self._build_mix()
+            return
         self.player.load(Path(data) if data else None)
-        self.canvas.set_peaks(self._load_peaks(data) if data else None)
+        if data:
+            self._analyse(data)
+        else:
+            self._apply_analysis()
+
+    def _build_mix(self) -> None:
+        """(Re)write the karaoke mix with the current backing lines, then play it."""
+        if not self.project:
+            return
+        from autokaraoke.mix import karaoke_mix
+
+        proj = copy.copy(self.project)
+        proj.lines = copy.deepcopy(self.project.lines)
+
+        def done(path) -> None:
+            if path is None or self.track.currentData() != MIX_TRACK:
+                return
+            self.analysis.pop(str(path), None)
+            self.player.load(Path(path), reload=True)
+            self._analyse(str(path))
+
+        job = Job("mix", lambda log: karaoke_mix(proj), self)
+        job.succeeded.connect(done)
+        job.failed.connect(lambda err: self.log(f"Karaoke mix failed: {err}"))
+        job.finished.connect(lambda j=job: self.bg_jobs.discard(j))
+        self.bg_jobs.add(job)
+        job.start()
 
     def save(self) -> bool:
         if not self.project:
@@ -344,7 +556,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Busy", "Wait for the current task to finish.")
             e.ignore()
             return
-        e.accept() if self._maybe_save() else e.ignore()
+        if not self._maybe_save():
+            e.ignore()
+            return
+        self._save_settings()
+        for job in list(self.bg_jobs):
+            job.wait()
+        e.accept()
 
     def _update_title(self) -> None:
         name = f"{self.project.artist} - {self.project.title}" if self.project else "No project"
@@ -354,7 +572,7 @@ class MainWindow(QMainWindow):
         busy = self.job is not None and self.job.isRunning()
         has = self.project is not None
         for a in (self.act_lyrics, self.act_separate, self.act_fix, self.act_align, self.act_render,
-                  self.act_export):
+                  self.act_export, *self.line_actions):
             a.setEnabled(has and not busy)
         for a in (self.act_new, self.act_open):
             a.setEnabled(not busy)
@@ -377,10 +595,9 @@ class MainWindow(QMainWindow):
         self.redo_stack.clear()
 
     def _restore(self, lines: list) -> None:
+        backing = [ln.backing for ln in self.project.lines]
         self.project.lines = lines
-        self.canvas.refresh()
-        self.lyrics.refresh()
-        self._mark_dirty()
+        self._lines_changed(backing_changed=backing != [ln.backing for ln in lines])
 
     def undo(self) -> None:
         if self.project and self.undo_stack:
@@ -399,21 +616,54 @@ class MainWindow(QMainWindow):
 
     def _after_edit(self) -> None:
         self.lyrics.refresh()
+        self.preview.update()
+        self._update_inspector()
         self._mark_dirty()
+
+    def _lines_changed(self, backing_changed: bool = False) -> None:
+        """After lines were added, removed, split or re-flagged."""
+        self.canvas.refresh()
+        self._after_edit()
+        if backing_changed:
+            self._refresh_tracks()
+            if self.track.currentData() == MIX_TRACK:
+                self._build_mix()
 
     # ---- navigation -------------------------------------------------------
 
     def _tick(self) -> None:
         t = self.player.position()
+        if self.play_range and self.player.is_playing():
+            start, end, loop = self.play_range
+            if t >= end:
+                if loop:
+                    self.player.seek(start)
+                    t = start
+                else:
+                    self.player.pause()
+                    self.play_range = None
         self.time_label.setText(fmt_time(t))
         self.canvas.set_playhead(t, follow=self.player.is_playing())
         self.preview.set_time(t)
         if self.project and self.player.is_playing():
             self.lyrics.highlight(current_line_index(self.project, t))
 
+    def _seek(self, t: float) -> None:
+        if self.play_range and not self.play_range[2]:
+            self.play_range = None
+        self.player.seek(t)
+
     def _play_from(self, t: float) -> None:
         self.player.seek(t)
         self.player.play()
+
+    def _speed_changed(self, value: int) -> None:
+        self.speed_label.setText(f"{value * 5}%")
+        self.player.set_rate(value * 5 / 100)
+
+    def _snap_toggled(self, on: bool) -> None:
+        self.canvas.snap = on
+        self.canvas.update()
 
     def _goto_line(self, row: int) -> None:
         if not self.project:
@@ -422,14 +672,72 @@ class MainWindow(QMainWindow):
         line = self.project.lines[row]
         if line.syllables():
             self.canvas.select(first)
-            start = line.syllables()[0].start
-            if start is not None:
-                self.player.seek(max(0.0, start - 0.5))
+            span = line.span()
+            if span is not None:
+                self.player.seek(max(0.0, span[0] - 0.5))
 
     def _selection_changed(self, index: int) -> None:
         if index >= 0 and self.project:
             self.lyrics.highlight(self.canvas.syl_line[index])
         self._update_status()
+        self._update_inspector()
+
+    def _update_inspector(self) -> None:
+        i = self.canvas.selected
+        ok = self.project is not None and 0 <= i < len(self.canvas.sylls)
+        for w in (self.syl_start, self.syl_end, self.btn_set_start, self.btn_set_end,
+                  self.btn_play_syl, self.btn_play_line, self.btn_loop):
+            w.setEnabled(ok)
+        if not ok:
+            self.syl_label.setText("No syllable selected")
+            return
+        s = self.canvas.sylls[i]
+        line = self.canvas.syl_line[i]
+        self.syl_label.setText(f"Syllable “{s.text}” · line {line + 1}")
+        for spin, value in ((self.syl_start, s.start), (self.syl_end, s.end)):
+            spin.blockSignals(True)
+            spin.setValue(value if value is not None else 0.0)
+            spin.setSpecialValueText("—" if value is None else "")
+            spin.blockSignals(False)
+
+    def _edge_edited(self, mode: str, value: float) -> None:
+        i = self.canvas.selected
+        if not self.project or not 0 <= i < len(self.canvas.sylls):
+            return
+        self.push_undo()
+        self.canvas.set_edge(i, mode, value)
+        self._after_edit()
+
+    def _syllable_range(self, i: int) -> tuple[float, float] | None:
+        s = self.canvas.sylls[i]
+        return (s.start, s.end) if s.start is not None and s.end is not None else None
+
+    def play_syllable(self) -> None:
+        i = self.canvas.selected
+        if not 0 <= i < len(self.canvas.sylls) or not (r := self._syllable_range(i)):
+            return
+        self.btn_loop.setChecked(False)
+        self.play_range = (max(0.0, r[0] - 0.3), r[1] + 0.15, False)
+        self._play_from(self.play_range[0])
+
+    def play_line(self, loop: bool) -> None:
+        i = self.canvas.selected
+        if not self.project or not 0 <= i < len(self.canvas.sylls):
+            return
+        span = self.project.lines[self.canvas.syl_line[i]].span()
+        if span is None:
+            return
+        self.play_range = (max(0.0, span[0] - 0.3), span[1] + 0.2, loop)
+        self._play_from(self.play_range[0])
+
+    def _loop_toggled(self, on: bool) -> None:
+        if on:
+            self.play_line(loop=True)
+            if self.play_range is None:
+                self.btn_loop.setChecked(False)
+        elif self.play_range and self.play_range[2]:
+            self.play_range = None
+            self.player.pause()
 
     def _update_status(self) -> None:
         if not self.project:
@@ -452,7 +760,10 @@ class MainWindow(QMainWindow):
             return False
         key = e.key()
         press = e.type() == QEvent.Type.KeyPress
-        if e.isAutoRepeat():
+        mods = e.modifiers()
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        arrows = (Qt.Key.Key_Left, Qt.Key.Key_Right)
+        if e.isAutoRepeat() and not (ctrl and key in arrows):
             return key == Qt.Key.Key_Space
         if key == Qt.Key.Key_Space:
             if self.tap_mode.currentData():
@@ -462,49 +773,110 @@ class MainWindow(QMainWindow):
             return True
         if not press or not self.project:
             return False
-        if key == Qt.Key.Key_Escape and self.tap_mode.currentData():
-            self.tap_mode.setCurrentIndex(0)
+        if key == Qt.Key.Key_Escape:
+            if self.tap_mode.currentData():
+                self.tap_mode.setCurrentIndex(0)
+                return True
+            if self.play_range:
+                self.btn_loop.setChecked(False)
+                self.play_range = None
+                return True
+            return False
+        if isinstance(QApplication.focusWidget(), LyricsPanel):
+            return False  # arrows, Enter, Delete... belong to the list there
+        n = len(self.canvas.sylls)
+        sel = self.canvas.selected
+        if key in arrows and ctrl:
+            if 0 <= sel < n:
+                step = NUDGE * (5 if mods & Qt.KeyboardModifier.ShiftModifier else 1)
+                self.canvas.nudge(sel, -step if key == Qt.Key.Key_Left else step)
             return True
-        mods = e.modifiers()
-        if key in (Qt.Key.Key_Left, Qt.Key.Key_Right) and not (mods & Qt.KeyboardModifier.ControlModifier) \
-                and not isinstance(QApplication.focusWidget(), LyricsPanel):
-            step = -1 if key == Qt.Key.Key_Left else 1
-            n = len(self.canvas.sylls)
+        if key in arrows:
             if n:
-                self.canvas.select(min(max(self.canvas.selected + step, 0), n - 1))
+                self.canvas.select(min(max(sel + (-1 if key == Qt.Key.Key_Left else 1), 0), n - 1))
             return True
-        if key in (Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight) and self.canvas.selected >= 0:
+        if key in (Qt.Key.Key_BracketLeft, Qt.Key.Key_BracketRight) and sel >= 0:
             self._set_boundary_at_playhead(start=key == Qt.Key.Key_BracketLeft)
+            return True
+        if key == Qt.Key.Key_P and not ctrl:
+            self.play_syllable()
+            return True
+        if key == Qt.Key.Key_L and not ctrl:
+            self.btn_loop.toggle()
             return True
         return False
 
     def _set_boundary_at_playhead(self, start: bool) -> None:
         """'[' / ']' set the selected syllable's start / end to the playhead."""
         i = self.canvas.selected
-        s = self.canvas.sylls[i]
-        t = self.player.position()
+        if not 0 <= i < len(self.canvas.sylls):
+            return
         self.push_undo()
-        if start:
-            s.start = min(t, s.end - MIN_DUR) if s.end is not None else t
-            if s.end is None:
-                s.end = s.start + 0.3
-            prev = self.canvas.sylls[i - 1] if i > 0 else None
-            if prev is not None and prev.start is not None and prev.end is not None \
-                    and prev.end > s.start:
-                prev.end = max(s.start, prev.start + MIN_DUR)
-        else:
-            s.end = max(t, (s.start if s.start is not None else t - 0.3) + MIN_DUR)
-            if s.start is None:
-                s.start = s.end - 0.3
-        s.confidence = 1.0
-        self._fix_lines()
-        self.canvas.update()
+        self.canvas.set_edge(i, "start" if start else "end", self.player.position())
         self._after_edit()
 
     def _fix_lines(self) -> None:
         for line in self.project.lines:
             if span := line.span():
                 line.start, line.end = span
+
+    def _locate(self, i: int) -> tuple[int, int, int]:
+        """Flat syllable index -> (line, word, syllable) indices."""
+        li = self.canvas.syl_line[i]
+        k = i - self.canvas.syl_line.index(li)
+        for wi, word in enumerate(self.project.lines[li].words):
+            if k < len(word.syllables):
+                return li, wi, k
+            k -= len(word.syllables)
+        raise IndexError(i)
+
+    def _syllable_menu(self, i: int, pos) -> None:
+        li, wi, si = self._locate(i)
+        word = self.project.lines[li].words[wi]
+        s = self.canvas.sylls[i]
+        menu = QMenu(self)
+        menu.addAction("Start at playhead  [", lambda: self._set_boundary_at_playhead(True))
+        menu.addAction("End at playhead  ]", lambda: self._set_boundary_at_playhead(False))
+        menu.addAction("Play syllable  P", self.play_syllable)
+        menu.addSeparator()
+        split = menu.addAction("Split syllable…", lambda: self.split_syllable(i))
+        split.setEnabled(len(s.text) > 1)
+        merge = menu.addAction("Merge with next syllable", lambda: self.merge_syllable(i))
+        merge.setEnabled(si + 1 < len(word.syllables))
+        menu.addSeparator()
+        menu.addAction("Edit line…", lambda: self.edit_line(li))
+        backing = menu.addAction("Backing vocals", lambda: self._set_backing([li], not self.project.lines[li].backing))
+        backing.setCheckable(True)
+        backing.setChecked(self.project.lines[li].backing)
+        menu.exec(pos)
+
+    def split_syllable(self, i: int) -> None:
+        li, wi, si = self._locate(i)
+        word = self.project.lines[li].words[wi]
+        text = word.syllables[si].text
+        mid = (len(text) + 1) // 2
+        notation, ok = QInputDialog.getText(
+            self, "Split syllable", "Put a '|' where the syllable should be split:",
+            QLineEdit.EchoMode.Normal, f"{text[:mid]}|{text[mid:]}")
+        if not ok or notation.count("|") != 1 or notation.replace("|", "") != text:
+            return
+        pos = notation.index("|")
+        if not 0 < pos < len(text):
+            return
+        self.push_undo()
+        text_edit.split_syllable(word, si, pos)
+        self._lines_changed()
+        self.canvas.select(i)
+
+    def merge_syllable(self, i: int) -> None:
+        li, wi, si = self._locate(i)
+        word = self.project.lines[li].words[wi]
+        if si + 1 >= len(word.syllables):
+            return
+        self.push_undo()
+        text_edit.merge_syllable_with_next(word, si)
+        self._lines_changed()
+        self.canvas.select(i)
 
     # ---- tap sync ---------------------------------------------------------
 
@@ -523,6 +895,8 @@ class MainWindow(QMainWindow):
         self.tap_index = max(self.canvas.selected, 0)
         self.tap_prev = -1
         self.tap_pressed = False
+        self.play_range = None
+        self.btn_loop.setChecked(False)
         self.push_undo()
         s = self.canvas.sylls[self.tap_index]
         if not self.player.is_playing():
@@ -583,29 +957,91 @@ class MainWindow(QMainWindow):
     # ---- line editing -----------------------------------------------------
 
     def edit_line(self, row: int) -> None:
-        if not self.project:
+        if not self.project or not 0 <= row < len(self.project.lines):
             return
         line = self.project.lines[row]
-        text, ok = QInputDialog.getText(
-            self, "Edit line",
-            "Words separated by spaces, syllables by '|'.\n"
-            "Without any '|' the line is split automatically.\n"
-            "Timings are kept if the syllable count does not change."
-            + (f"\n\n⚠ {line.note}" if line.note else ""),
-            QLineEdit.EchoMode.Normal, to_notation(line),
-        )
-        if ok and text == to_notation(line) and line.note:
-            self.push_undo()
-            line.note = ""  # confirmed as is: dismiss the review hint
-            self._after_edit()
+        dlg = LineEditDialog("Edit line", to_notation(line), line.note, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
             return
-        if not ok or not text.strip() or text == to_notation(line):
+        text = dlg.text()
+        if text == to_notation(line):
+            if line.note:
+                self.push_undo()
+                line.note = ""  # confirmed as is: dismiss the review hint
+                self._after_edit()
             return
         self.push_undo()
-        retext_line(line, text.strip(), self.project.language)
-        line.note = ""
-        self.canvas.refresh()
-        self._after_edit()
+        if not text:
+            del self.project.lines[row]
+        else:
+            new = text_edit.split_into_lines(line, text, self.project.language)
+            for ln in new:
+                ln.note = ""
+            self.project.lines[row : row + 1] = new
+        self._lines_changed(backing_changed=line.backing)
+        self.lyrics.setCurrentRow(min(row, len(self.project.lines) - 1))
+
+    def insert_line(self) -> None:
+        if not self.project:
+            return
+        rows = self.lyrics.selected_rows()
+        row = rows[-1] if rows else len(self.project.lines) - 1
+        dlg = LineEditDialog("Insert line below", "", parent=self)
+        if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.text():
+            return
+        lines = self.project.lines
+        prev = lines[row] if 0 <= row < len(lines) else None
+        nxt = lines[row + 1] if row + 1 < len(lines) else None
+        # Time all the text as one line in the gap, then split it: several lines share the gap.
+        joined = text_edit.new_line(" ".join(dlg.text().split()), self.project.language, prev, nxt)
+        new = text_edit.split_into_lines(joined, dlg.text(), self.project.language)
+        self.push_undo()
+        lines[row + 1 : row + 1] = new
+        self._lines_changed()
+        self.lyrics.setCurrentRow(row + 1)
+        if not new[0].span():
+            self.log("The new line has no timing yet: select it and use Tap sync, [ / ], or Auto-sync")
+
+    def delete_lines(self) -> None:
+        rows = self.lyrics.selected_rows()
+        if not self.project or not rows:
+            return
+        self.push_undo()
+        backing = any(self.project.lines[r].backing for r in rows)
+        for r in reversed(rows):
+            del self.project.lines[r]
+        self.canvas.selected = -1
+        self._lines_changed(backing_changed=backing)
+        self.lyrics.setCurrentRow(min(rows[0], len(self.project.lines) - 1))
+
+    def merge_lines(self) -> None:
+        rows = self.lyrics.selected_rows()
+        if not self.project or not rows:
+            return
+        first, last = rows[0], rows[-1] if len(rows) > 1 else rows[0] + 1
+        if last >= len(self.project.lines):
+            return
+        self.push_undo()
+        merged = self.project.lines[first]
+        for ln in self.project.lines[first + 1 : last + 1]:
+            merged = text_edit.merge_lines(merged, ln)
+        self.project.lines[first : last + 1] = [merged]
+        self._lines_changed(backing_changed=True)
+        self.lyrics.setCurrentRow(first)
+
+    def toggle_backing(self) -> None:
+        rows = self.lyrics.selected_rows()
+        if self.project and rows:
+            self._set_backing(rows, not all(self.project.lines[r].backing for r in rows))
+
+    def _set_backing(self, rows: list[int], on: bool) -> None:
+        self.push_undo()
+        for r in rows:
+            self.project.lines[r].backing = on
+        self._lines_changed(backing_changed=True)
+        if on:
+            self.log("Backing lines stay in the karaoke audio: choose “Karaoke (instrumental + backing)” "
+                     "under Audio to hear it")
 
     # ---- pipeline jobs ----------------------------------------------------
 
@@ -727,6 +1163,7 @@ class MainWindow(QMainWindow):
         self.preview.update()
         self._update_title()
         self._update_status()
+        self._refresh_tracks()
 
     def show_settings(self) -> bool:
         ok = SettingsDialog(self).exec() == QDialog.DialogCode.Accepted
@@ -786,15 +1223,30 @@ class MainWindow(QMainWindow):
 
     def show_help(self) -> None:
         QMessageBox.information(self, "Keyboard shortcuts", (
-            "Space — play / pause (tap key when Tap sync is on)\n"
-            "Esc — stop tap sync\n"
-            "← / → — select previous / next syllable\n"
-            "[ / ] — set selected syllable start / end at the playhead\n"
-            "Ctrl+Z / Ctrl+Shift+Z — undo / redo\n"
-            "Ctrl+S — save\n\n"
+            "Fixing a syllable by hand\n"
+            "  1. Click it in the timeline (or go to it with ← / →).\n"
+            "  2. P plays it, L loops its line (slow down with Speed if needed).\n"
+            "  3. Drag the block or its edges, or press [ / ] at the right moment while it\n"
+            "     plays, or type the times in Start / End. Ctrl+← / → nudges it by 10 ms\n"
+            "     (Shift: 50 ms).\n"
+            "  The Spectrogram view shows consonants as bright vertical streaks; Snap makes\n"
+            "  dragged starts stick to the detected attacks (cyan ticks).\n\n"
+            "Keys\n"
+            "  Space — play / pause (tap key when Tap sync is on)\n"
+            "  Esc — stop tap sync / loop\n"
+            "  ← / → — select previous / next syllable\n"
+            "  [ / ] — set selected syllable start / end at the playhead\n"
+            "  P / L — play syllable / loop line\n"
+            "  Ctrl+← / → — nudge syllable (Shift: more)\n"
+            "  Ctrl+Z / Ctrl+Shift+Z — undo / redo, Ctrl+S — save\n\n"
+            "Lyrics list (multiple selection with Ctrl / Shift)\n"
+            "  Enter — edit (new lines split it) · Insert — add a line below\n"
+            "  Delete — delete · Ctrl+J — merge · B — backing vocals on / off\n\n"
             "Timeline: drag a block to move it, drag its edges to resize\n"
-            "(touching neighbours follow; hold Alt to detach).\n"
+            "(touching neighbours follow; hold Alt to detach). Drag the line between the\n"
+            "audio and the syllables to resize the syllable lane. Right-click a block for more.\n"
             "Click empty area to seek, double-click a block to play from it.\n"
             "Wheel scrolls, Ctrl/Shift+wheel zooms.\n\n"
-            "Colors: green = confident, yellow/red = check, blue = edited by you."
+            "Colors: green = confident, yellow/red = check, blue = edited by you.\n"
+            "Blue lines in the list are backing vocals (kept in the karaoke audio)."
         ))
