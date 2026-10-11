@@ -1200,14 +1200,18 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self, "AI components missing",
                 "Vocal separation and syncing need the optional dependencies:\n\n"
-                "uv sync --extra separation --extra align --extra gui")
+                "uv sync --extra gui --extra separation --extra align --extra gpu\n"
+                "(--extra cpu instead of gpu without an NVIDIA card)")
             return False
         if st == "outdated":
             text = ("This version of AutoKaraoke uses updated AI components. Download the update now?\n"
                     "(Only what changed is downloaded.)")
         else:
-            text = ("Vocal separation and automatic syncing need the AI components: about 4 GB "
-                    "to download once (PyTorch with GPU support, speech models' libraries).\n\n"
+            size = ("3-4 GB, PyTorch for your NVIDIA card" if components.torch_variant() == "gpu"
+                    else "under 1 GB, PyTorch for the CPU: no NVIDIA card was found, so the AI "
+                         "steps will be slow")
+            text = ("Vocal separation and automatic syncing need the AI components, downloaded "
+                    f"once ({size}).\n\n"
                     "The models themselves (~5 GB more) are downloaded the first time each step runs.\n\n"
                     "Download the components now?")
         if QMessageBox.question(self, "AI components", text) != QMessageBox.StandardButton.Yes:

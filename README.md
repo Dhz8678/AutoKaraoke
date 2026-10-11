@@ -66,17 +66,18 @@ It runs locally on your computer: no account, no upload.
 
 How long a 4-minute song takes, model loading included:
 
-| Step | NVIDIA RTX 4060 Ti | CPU only |
+| Step | NVIDIA RTX 4060 Ti | CPU only, desktop (Intel i7-13700K) |
 |---|---|---|
-| Separate vocals | ~25 s | 10 minutes or more (Intel i5-1145G7 laptop) |
-| Auto-sync syllables | ~10 s | ~1 minute on a desktop i7-13700K, more on a laptop |
+| Separate vocals | ~25 s | ~4 minutes |
+| Auto-sync syllables | ~10 s | ~1 minute |
 
 Editing and rendering the video are fast on any PC. The first run of each step also downloads
 its AI model.
 
 The packages are small launchers (~140 MB, ffmpeg included). The first start downloads Python
 and the editor (a few hundred MB). The first time you separate or sync a song, the app offers to
-download the AI components (~4 GB, PyTorch with GPU support); then each AI model downloads the
+download the AI components: 3-4 GB with an NVIDIA card (PyTorch with CUDA), under 1 GB without
+one (the CPU-only PyTorch, chosen automatically). Then each AI model downloads the
 first time it is used.
 
 - **Linux**: make the file executable (`chmod +x AutoKaraoke-*.AppImage`, or *Properties →
@@ -154,10 +155,13 @@ Windows, and should work on macOS (untested, no GPU acceleration).
 
 ```sh
 git clone <this repository> && cd AutoKaraoke
-uv sync --all-extras        # or pick: --extra gui --extra separation --extra align [--extra download]
+uv sync --extra all         # or pick: --extra gui --extra separation --extra align --extra gpu [--extra download]
 uv run autokaraoke gui ["projects/Artist - Title"]
 uv run pytest               # tests
 ```
+
+Pick one PyTorch build: `--extra gpu` (CUDA, for NVIDIA cards) or `--extra cpu` (much smaller,
+CPU only). `all` includes `gpu`.
 
 ### Command line
 

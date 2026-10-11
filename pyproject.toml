@@ -22,12 +22,15 @@ dependencies = [
 download = ["yt-dlp"]
 # Vocal separation (UVR models via python-audio-separator).
 # audioread is imported by audio-separator but no longer pulled in transitively.
-# torch / torchvision are listed so that Windows gets the CUDA build (see tool.uv.sources).
-separation = ["audio-separator[gpu]>=0.30", "audioread", "torch", "torchvision"]
+separation = ["audio-separator>=0.30", "audioread"]
 # Automatic word/syllable alignment.
-align = ["qwen-asr", "librosa>=0.10", "uroman", "num2words", "torch"]
+align = ["qwen-asr", "librosa>=0.10", "uroman", "num2words"]
 gui = ["PySide6>=6.7"]
-all = ["autokaraoke[download,separation,align,gui]"]
+# PyTorch build: pick exactly one. "gpu" = CUDA (NVIDIA cards), "cpu" = much smaller
+# download for PCs without an NVIDIA card. The release packages choose automatically.
+gpu = ["torch", "torchvision", "audio-separator[gpu]>=0.30"]
+cpu = ["torch", "torchvision", "audio-separator[cpu]>=0.30"]
+all = ["autokaraoke[download,separation,align,gui,gpu]"]
 
 [project.scripts]
 autokaraoke = "autokaraoke.cli:app"
@@ -39,14 +42,29 @@ dev = ["pytest>=8"]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# PyPI has CUDA builds of torch for Linux only; Windows gets them from the PyTorch index.
+[tool.uv]
+conflicts = [[{ extra = "gpu" }, { extra = "cpu" }]]
+
+# PyPI has CUDA builds of torch for Linux only: Windows "gpu" gets them from the PyTorch
+# index, and "cpu" gets the CPU-only builds (no CUDA libraries) on every system.
 [tool.uv.sources]
-torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
-torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+torch = [
+    { index = "pytorch-cu130", extra = "gpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
+]
+torchvision = [
+    { index = "pytorch-cu130", extra = "gpu", marker = "sys_platform == 'win32'" },
+    { index = "pytorch-cpu", extra = "cpu", marker = "sys_platform != 'darwin'" },
+]
 
 [[tool.uv.index]]
 name = "pytorch-cu130"
 url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [tool.hatch.build.targets.wheel]
