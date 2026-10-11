@@ -8,7 +8,8 @@ Mouse:
   click empty area      seek
   double-click block    play from just before the syllable
   right-click block     syllable menu
-  wheel / Shift+wheel   scroll / zoom (Ctrl+wheel also zooms)
+  wheel / Shift+wheel   scroll
+  Ctrl+wheel            zoom
 """
 
 from __future__ import annotations
@@ -42,7 +43,7 @@ HINTS = {
     "start": "Drag: move the start (shared with a touching neighbour; hold Alt to detach)",
     "end": "Drag: move the end (shared with a touching neighbour; hold Alt to detach)",
     "divider": "Drag: resize the syllable lane",
-    "": "Click: seek · Wheel: scroll · Ctrl/Shift+wheel: zoom · Select a syllable, then "
+    "": "Click: seek · Wheel: scroll · Ctrl+wheel: zoom · Select a syllable, then "
         "[ / ] set its start / end at the playhead",
 }
 
@@ -519,7 +520,7 @@ class TimelineCanvas(QWidget):
     def wheelEvent(self, e: QWheelEvent) -> None:
         delta = e.angleDelta().y() or e.angleDelta().x()
         mods = e.modifiers()
-        if mods & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+        if mods & Qt.KeyboardModifier.ControlModifier:
             self.zoom(1.15 if delta > 0 else 1 / 1.15, e.position().x())
         else:
             self.set_view_start(self.view_start - delta / 120 * self.visible_seconds() * 0.1)

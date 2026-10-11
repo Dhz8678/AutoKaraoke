@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from autokaraoke import config, steps
-from autokaraoke.gui.dialogs import LineEditDialog, ProposalDialog, SettingsDialog
+from autokaraoke.gui.dialogs import HelpDialog, LineEditDialog, ProposalDialog, SettingsDialog
 from autokaraoke.gui.jobs import Job
 from autokaraoke.gui.lyrics_panel import LyricsPanel, fmt_time
 from autokaraoke.gui.player import Player
@@ -164,7 +164,9 @@ class MainWindow(QMainWindow):
         self.act_separate = self._action("Separate", self.separate, tip="Split vocals / instrumental")
         self.act_align = self._action("Auto-sync", self.align, tip="Automatic syllable alignment")
         self.act_render = self._action("Render video…", self.render, "Ctrl+R")
-        self.act_export = self._action("Export…", self.export, "Ctrl+E", "Export ASS or enhanced LRC")
+        self.act_export = self._action("Export lyrics…", self.export, "Ctrl+E",
+                                       "Save the synced lyrics as ASS subtitles or enhanced LRC "
+                                       "(no video: use Render video for that)")
 
         # Line actions work on the lines selected in the lyrics list (shortcuts active there).
         self.act_line_edit = self._action("Edit line…", lambda: self.edit_line(self.lyrics.currentRow()),
@@ -567,7 +569,7 @@ class MainWindow(QMainWindow):
 
     def _update_title(self) -> None:
         name = f"{self.project.artist} - {self.project.title}" if self.project else "No project"
-        self.setWindowTitle(f"{'*' if self.dirty else ''}{name} — AutoKaraoke")
+        self.setWindowTitle(f"{'*' if self.dirty else ''}{name} - AutoKaraoke")
 
     def _set_enabled(self) -> None:
         busy = self.job is not None and self.job.isRunning()
@@ -698,7 +700,7 @@ class MainWindow(QMainWindow):
         for spin, value in ((self.syl_start, s.start), (self.syl_end, s.end)):
             spin.blockSignals(True)
             spin.setValue(value if value is not None else 0.0)
-            spin.setSpecialValueText("—" if value is None else "")
+            spin.setSpecialValueText("--" if value is None else "")
             spin.blockSignals(False)
 
     def _edge_edited(self, mode: str, value: float) -> None:
@@ -1226,40 +1228,13 @@ class MainWindow(QMainWindow):
         from autokaraoke.export.lrc import write_lrc
 
         out, filt = QFileDialog.getSaveFileName(
-            self, "Export", str(self.project.path / f"{self.project.slug}.ass"),
+            self, "Export synced lyrics", str(self.project.path / f"{self.project.slug}.ass"),
             "ASS subtitles (*.ass);;Enhanced LRC (*.lrc)",
         )
         if not out:
             return
         (write_lrc if out.endswith(".lrc") else write_ass)(self.project, Path(out))
-        self.log(f"Exported {out}")
+        self.log(f"Lyrics exported to {out}")
 
     def show_help(self) -> None:
-        QMessageBox.information(self, "Keyboard shortcuts", (
-            "Fixing a syllable by hand\n"
-            "  1. Click it in the timeline (or go to it with ← / →).\n"
-            "  2. P plays it, L loops its line (slow down with Speed if needed).\n"
-            "  3. Drag the block or its edges, or press [ / ] at the right moment while it\n"
-            "     plays, or type the times in Start / End. Ctrl+← / → nudges it by 10 ms\n"
-            "     (Shift: 50 ms).\n"
-            "  The Spectrogram view shows consonants as bright vertical streaks; Snap makes\n"
-            "  dragged starts stick to the detected attacks (cyan ticks).\n\n"
-            "Keys\n"
-            "  Space — play / pause (tap key when Tap sync is on)\n"
-            "  Esc — stop tap sync / loop\n"
-            "  ← / → — select previous / next syllable\n"
-            "  [ / ] — set selected syllable start / end at the playhead\n"
-            "  P / L — play syllable / loop line\n"
-            "  Ctrl+← / → — nudge syllable (Shift: more)\n"
-            "  Ctrl+Z / Ctrl+Shift+Z — undo / redo, Ctrl+S — save\n\n"
-            "Lyrics list (multiple selection with Ctrl / Shift)\n"
-            "  Enter — edit (new lines split it) · Insert — add a line below\n"
-            "  Delete — delete · Ctrl+J — merge · B — backing vocals on / off\n\n"
-            "Timeline: drag a block to move it, drag its edges to resize\n"
-            "(touching neighbours follow; hold Alt to detach). Drag the line between the\n"
-            "audio and the syllables to resize the syllable lane. Right-click a block for more.\n"
-            "Click empty area to seek, double-click a block to play from it.\n"
-            "Wheel scrolls, Ctrl/Shift+wheel zooms.\n\n"
-            "Colors: green = confident, yellow/red = check, blue = edited by you.\n"
-            "Blue lines in the list are backing vocals (kept in the karaoke audio)."
-        ))
+        HelpDialog(self).exec()

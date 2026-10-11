@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
+    QTextBrowser,
     QTreeWidget,
     QTreeWidgetItem,
     QVBoxLayout,
@@ -146,6 +147,79 @@ class LineEditDialog(QDialog):
 
     def text(self) -> str:
         return self.edit.toPlainText().strip()
+
+
+HELP_SECTIONS = (
+    ("Fixing a syllable by hand", None, (
+        "Click it in the timeline, or go to it with ← / →.",
+        "<b>P</b> plays it, <b>L</b> loops its line. Slow down with <i>Speed</i> if needed.",
+        "Drag the block or its edges, press <b>[</b> / <b>]</b> at the right moment while it plays, "
+        "or type the times in <i>Start</i> / <i>End</i>. <b>Ctrl+← / →</b> nudges it by 10 ms "
+        "(with Shift: 50 ms).",
+        "The <i>Spectrogram</i> view shows consonants as bright vertical streaks. <i>Snap</i> makes "
+        "dragged starts stick to the detected attacks (cyan ticks).",
+    )),
+    ("Keys", (
+        ("Space", "Play / pause; the tap key when Tap sync is on"),
+        ("Esc", "Stop tap sync or loop"),
+        ("← / →", "Select previous / next syllable"),
+        ("[ / ]", "Set the selected syllable start / end at the playhead"),
+        ("P / L", "Play syllable / loop line"),
+        ("Ctrl+← / →", "Nudge syllable by 10 ms (with Shift: 50 ms)"),
+        ("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo"),
+        ("Ctrl+S", "Save"),
+        ("Ctrl+E", "Export the synced lyrics (ASS / LRC)"),
+        ("Ctrl+R", "Render the video"),
+    ), None),
+    ("Lyrics list (multiple selection with Ctrl / Shift)", (
+        ("Enter / double-click", "Edit the line; typing a new line splits it"),
+        ("Insert", "Add a line below"),
+        ("Delete", "Delete the selected lines"),
+        ("Ctrl+J", "Merge the selected lines, or the line with the next one"),
+        ("B", "Backing vocals on / off (blue lines, kept in the karaoke audio)"),
+    ), None),
+    ("Timeline mouse", (
+        ("Drag a block", "Move the syllable; touching neighbours follow"),
+        ("Drag a block edge", "Resize it; hold Alt to detach it from its neighbour"),
+        ("Drag the lane divider", "Resize the syllable lane"),
+        ("Click empty area", "Seek"),
+        ("Double-click a block", "Play from just before it"),
+        ("Right-click a block", "Split / merge syllables, set times, backing vocals"),
+        ("Wheel / Shift+wheel", "Scroll"),
+        ("Ctrl+wheel", "Zoom"),
+    ), None),
+    ("Colours", (
+        ("Green", "Confident timing"),
+        ("Yellow / red", "To check"),
+        ("Blue", "Edited by you"),
+    ), None),
+)
+
+
+class HelpDialog(QDialog):
+    """Keyboard shortcuts and how-to, in a resizable window."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Keyboard shortcuts")
+        parts = ["<style>td { padding: 2px 14px 2px 0; vertical-align: top; } "
+                 "h3 { margin: 14px 0 4px 0; } kbd, .k { font-weight: bold; white-space: nowrap; }</style>"]
+        for title, rows, steps in HELP_SECTIONS:
+            parts.append(f"<h3>{title}</h3>")
+            if steps:
+                parts.append("<ol>" + "".join(f"<li>{s}</li>" for s in steps) + "</ol>")
+            if rows:
+                parts.append("<table>" + "".join(
+                    f"<tr><td class='k'>{k}</td><td>{d}</td></tr>" for k, d in rows) + "</table>")
+        text = QTextBrowser()
+        text.setHtml("".join(parts))
+        text.setOpenExternalLinks(True)
+        v = QVBoxLayout(self)
+        v.addWidget(text)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.reject)
+        v.addWidget(buttons)
+        self.resize(760, 680)
 
 
 def save_settings(values: dict[str, str]) -> None:
