@@ -3,9 +3,9 @@
 Semi-automatic karaoke track generator with syllable-level sync.
 
 Pipeline: audio → lyrics from [LRCLIB](https://lrclib.net) → vocal separation (UVR models via
-[python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator)) → optional lyric
-check against what is actually sung (speech recognition + LLM) → automatic syllable alignment →
-manual fine-tuning in the editor → video with instrumental, original and vocals-only audio tracks.
+[python-audio-separator](https://github.com/nomadkaraoke/python-audio-separator)) → automatic syllable
+alignment → manual fine-tuning in the editor → video with instrumental, original and vocals-only
+audio tracks.
 
 > Work in progress (MVP).
 
@@ -26,14 +26,10 @@ uv sync --all-extras        # or pick: --extra separation --extra align --extra 
 uv run autokaraoke gui ["projects/Artist - Title"]
 ```
 
-*New* → pick an audio file → *Separate* → (*Fix lyrics…*) → *Auto-sync* → fix what is highlighted →
-*Render video*.
+*New* → pick an audio file → *Separate* → *Auto-sync* → fix what is highlighted → *Render video*.
 
 - **Lyrics**: from LRCLIB, from a local `.lrc`/`.txt`, or *Transcribe from vocals* when no lyrics
   exist anywhere.
-- **Fix lyrics…** (needs an OpenRouter key, see below): compares the lyrics with a transcript of the
-  vocals and proposes changes (expanded choruses, removed `[Chorus]` labels, wrong words) that you
-  accept or reject one by one. Lines where the transcript heard something else are marked ⚠.
 
 - **Timeline**: drag syllable blocks or their edges (touching neighbours follow, Alt detaches);
   colors show confidence (green ok, yellow/red to check, blue edited by you).
@@ -51,7 +47,7 @@ uv run autokaraoke run "Artist - Title.mp3"          # whole pipeline
 uv run autokaraoke new song.flac --artist "Artist" --title "Title"
 uv run autokaraoke separate "projects/Artist - Title"
 uv run autokaraoke lyrics "projects/Artist - Title" --from-audio   # only if LRCLIB has nothing
-uv run autokaraoke reconcile "projects/Artist - Title"   # check lyrics vs vocals (LLM)
+uv run autokaraoke reconcile "projects/Artist - Title"   # experimental, see below
 uv run autokaraoke align "projects/Artist - Title"    # --engine qwen|mms|naive
 uv run autokaraoke render "projects/Artist - Title"   # --background image.jpg
 uv run autokaraoke export "projects/Artist - Title" --format lrc
@@ -73,7 +69,12 @@ uv run autokaraoke export "projects/Artist - Title" --format lrc
 5. Post-processing fixes known failure modes (first syllable glued to the previous line, zero-length
    syllables) using the vocal energy envelope, and assigns a confidence to every syllable.
 
-## Lyric check with an LLM (optional)
+## Lyric check with an LLM (experimental, off by default)
+
+The results are hit and miss, so this is disabled unless you enable it in *File → Settings…*
+(or set `AUTOKARAOKE_EXPERIMENTAL_LLM=1`). It then adds *Fix lyrics (experimental)…*, which
+proposes changes (expanded choruses, removed `[Chorus]` labels, wrong words) to accept or reject
+one by one, and cleans up lyrics transcribed from audio.
 
 Published lyrics often differ from the recording. With an [OpenRouter](https://openrouter.ai) key,
 the vocals are transcribed locally (Qwen3-ASR) and a text-only LLM (default

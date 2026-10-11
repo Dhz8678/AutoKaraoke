@@ -8,6 +8,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QBrush, QColor
 from PySide6.QtWidgets import (
     QDialog,
+    QCheckBox,
     QDialogButtonBox,
     QFormLayout,
     QHBoxLayout,
@@ -133,16 +134,23 @@ class SettingsDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         form = QFormLayout(self)
+        self.experimental = QCheckBox("Enable experimental LLM features (Fix lyrics)")
+        self.experimental.setChecked(config.experimental_llm())
         self.key = QLineEdit(config.openrouter_key() or "")
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
         self.key.setPlaceholderText("sk-or-…  (optional, from openrouter.ai/keys)")
         self.model = QLineEdit(config.OPENROUTER_MODEL)
+        form.addRow(self.experimental)
         form.addRow(QLabel(
-            "An OpenRouter key enables 'Fix lyrics' and cleaner lyrics transcribed from audio.\n"
-            "A song costs a fraction of a cent. The key is stored in " + str(config.CONFIG_DIR / ".env")
+            "Experimental: an LLM compares the lyrics with a transcript of the vocals ('Fix lyrics')\n"
+            "and cleans up lyrics transcribed from audio. Results are hit and miss: review every change.\n"
+            "Needs an OpenRouter key; a song costs a fraction of a cent.\n"
+            "Settings are stored in " + str(config.CONFIG_DIR / ".env")
         ))
         form.addRow("OpenRouter key", self.key)
         form.addRow("LLM model", self.model)
+        self.experimental.toggled.connect(self._toggle_llm)
+        self._toggle_llm(self.experimental.isChecked())
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Save
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -150,9 +158,14 @@ class SettingsDialog(QDialog):
         form.addRow(buttons)
         self.resize(560, 0)
 
+    def _toggle_llm(self, on: bool) -> None:
+        self.key.setEnabled(on)
+        self.model.setEnabled(on)
+
     def accept(self) -> None:
         key = self.key.text().strip()
         model = self.model.text().strip() or "deepseek/deepseek-v4.1-flash"
-        save_settings({"OPENROUTER_API_KEY": key, "AUTOKARAOKE_LLM_MODEL": model})
+        save_settings({"OPENROUTER_API_KEY": key, "AUTOKARAOKE_LLM_MODEL": model,
+                       "AUTOKARAOKE_EXPERIMENTAL_LLM": "1" if self.experimental.isChecked() else ""})
         config.OPENROUTER_MODEL = model
         super().accept()

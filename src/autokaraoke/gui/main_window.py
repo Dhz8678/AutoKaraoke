@@ -144,9 +144,10 @@ class MainWindow(QMainWindow):
         self.act_redo = self._action("Redo", self.redo, "Ctrl+Shift+Z")
         self.act_lyrics = self._action("Lyrics", self.fetch_lyrics,
                                        tip="Fetch lyrics from LRCLIB or load a .lrc/.txt file")
-        self.act_fix = self._action("Fix lyrics…", self.fix_lyrics,
-                                    tip="Compare the lyrics with what is sung (speech recognition + LLM): "
-                                        "expand repeated choruses, remove labels, fix wrong words")
+        self.act_fix = self._action("Fix lyrics (experimental)…", self.fix_lyrics,
+                                    tip="Experimental: compare the lyrics with what is sung (speech "
+                                        "recognition + LLM). Enable it in File → Settings")
+        self.act_fix.setVisible(config.experimental_llm())
         self.act_settings = self._action("Settings…", self.show_settings)
         self.act_separate = self._action("Separate", self.separate, tip="Split vocals / instrumental")
         self.act_align = self._action("Auto-sync", self.align, tip="Automatic syllable alignment")
@@ -675,7 +676,7 @@ class MainWindow(QMainWindow):
         b_file = box.addButton("File (.lrc / .txt)…", QMessageBox.ButtonRole.AcceptRole)
         b_audio = box.addButton("Transcribe from vocals", QMessageBox.ButtonRole.AcceptRole)
         b_audio.setToolTip("Speech recognition of the vocal stem (better after Separate); "
-                           "cleaned up by the LLM when an OpenRouter key is set")
+                           "check the result line by line")
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.exec()
         clicked = box.clickedButton()
@@ -695,6 +696,8 @@ class MainWindow(QMainWindow):
                   self._reload)
 
     def fix_lyrics(self) -> None:
+        if not config.experimental_llm():
+            return
         if not config.openrouter_key():
             QMessageBox.information(self, "Fix lyrics",
                                     "This needs an OpenRouter API key (a song costs a fraction of a cent).")
@@ -726,7 +729,9 @@ class MainWindow(QMainWindow):
         self._update_status()
 
     def show_settings(self) -> bool:
-        return SettingsDialog(self).exec() == QDialog.DialogCode.Accepted
+        ok = SettingsDialog(self).exec() == QDialog.DialogCode.Accepted
+        self.act_fix.setVisible(config.experimental_llm())
+        return ok
 
     def separate(self) -> None:
         path = self._prepare_job()

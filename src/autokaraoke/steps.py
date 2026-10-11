@@ -209,7 +209,7 @@ def lyrics_from_audio(proj: Project, log: Log = _noop) -> None:
         raise LyricsNotFound("No lyrics could be recognised in the vocals")
     proj.lines = []
     proj.lyrics_source = "asr"
-    if config.openrouter_key():
+    if config.llm_available():
         from autokaraoke.llm import LlmError
 
         try:
@@ -217,7 +217,7 @@ def lyrics_from_audio(proj: Project, log: Log = _noop) -> None:
         except (LlmError, ValueError) as e:
             log(f"LLM clean-up failed ({e}); using the raw transcript")
     else:
-        log("No OpenRouter key: using the raw transcript as lyrics")
+        log("Using the raw transcript as lyrics; fix them in the editor")
     if not proj.lines:
         proj.lines = lines_from_transcript(tr, proj.language)
         proj.save()

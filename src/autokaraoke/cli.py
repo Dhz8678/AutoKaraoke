@@ -100,11 +100,15 @@ def reconcile(
     yes: Annotated[bool, typer.Option("--yes", "-y", help="Apply without asking")] = False,
     accept_doubts: Annotated[bool, typer.Option(help="Also use the transcript text for doubtful lines")] = False,
 ) -> None:
-    """Fix the lyrics to match what is sung (transcript + LLM via OpenRouter).
+    """[Experimental] Fix the lyrics to match what is sung (transcript + LLM via OpenRouter).
 
     Expands repeated choruses, removes section labels and fixes wrong words. Run
-    'align' again afterwards.
+    'align' again afterwards. Needs AUTOKARAOKE_EXPERIMENTAL_LLM=1 and OPENROUTER_API_KEY.
     """
+    if not config.llm_available():
+        console.print("[red]Experimental LLM features are off.[/] Set AUTOKARAOKE_EXPERIMENTAL_LLM=1 "
+                      "and OPENROUTER_API_KEY (environment or .env).")
+        raise typer.Exit(1)
     proj = Project.load(project)
     proposal = steps.reconcile(proj, log=log)
     for c in proposal.changes:
@@ -176,7 +180,8 @@ def run(
     background: Annotated[Optional[Path], typer.Option()] = None,
     reconcile_lyrics: Annotated[bool, typer.Option(
         "--reconcile/--no-reconcile",
-        help="Fix the lyrics with transcript + LLM when an OpenRouter key is set")] = True,
+        help="[Experimental] Fix the lyrics with transcript + LLM (needs "
+             "AUTOKARAOKE_EXPERIMENTAL_LLM=1 and an OpenRouter key)")] = False,
 ) -> None:
     """Full pipeline: new -> separate -> (reconcile) -> align -> render."""
     proj = steps.create_project(source, out, title, artist, album, lang, log=log)
@@ -190,7 +195,7 @@ def run(
         steps.separate(proj, log=log)
     if not found:
         steps.lyrics_from_audio(proj, log=log)
-    elif reconcile_lyrics and config.openrouter_key():
+    elif reconcile_lyrics and config.llm_available():
         proposal = steps.reconcile(proj, log=log)
         _print_changes(proposal)
         steps.apply_proposal(proj, proposal)

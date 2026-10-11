@@ -105,3 +105,16 @@ def test_dotenv(tmp_path, monkeypatch):
     config._load_dotenv(env)
     assert config.openrouter_key() == "abc"
     assert __import__("os").environ["AK_TEST_OTHER"] == "keep"  # real environment wins
+
+
+def test_llm_is_experimental_and_off_by_default(monkeypatch):
+    from autokaraoke import config
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "abc")
+    monkeypatch.delenv("AUTOKARAOKE_EXPERIMENTAL_LLM", raising=False)
+    assert not config.llm_available()
+    monkeypatch.setenv("AUTOKARAOKE_EXPERIMENTAL_LLM", "1")
+    assert config.llm_available()
+    monkeypatch.setenv("OPENROUTER_KEY", "abc")  # old alias is no longer read
+    monkeypatch.delenv("OPENROUTER_API_KEY")
+    assert config.openrouter_key() is None

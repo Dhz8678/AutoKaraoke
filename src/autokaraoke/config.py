@@ -53,4 +53,13 @@ def openrouter_key() -> str | None:
     return os.environ.get("OPENROUTER_API_KEY") or None
 
 
+def experimental_llm() -> bool:
+    """LLM lyric fixing is experimental and off unless AUTOKARAOKE_EXPERIMENTAL_LLM=1."""
+    return os.environ.get("AUTOKARAOKE_EXPERIMENTAL_LLM", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def llm_available() -> bool:
+    return experimental_llm() and openrouter_key() is not None
+
+
 OPENROUTER_MODEL = os.environ.get("AUTOKARAOKE_LLM_MODEL", "deepseek/deepseek-v4.1-flash")
