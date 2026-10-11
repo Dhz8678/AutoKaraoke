@@ -273,12 +273,25 @@ def test_backing_envelope():
     p = _project()
     p.lines[1].backing = True
     spans = backing_spans(p)
-    assert len(spans) == 1
+    assert spans == [p.lines[1].span()]  # exactly the sung syllables, no padding
     a, b = spans[0]
-    env = envelope(spans, 70 * 100, 100)  # 100 Hz "audio" for the test
-    assert env[int(a * 100) + 1] == 1.0 and env[int(b * 100) - 1] == 1.0
-    assert env[int((a - FADE) * 100) - 2] == 0.0 and env[int((b + FADE) * 100) + 2] == 0.0
-    assert 0 < env[int((a - FADE / 2) * 100)] < 1
+    sr = 1000
+    env = envelope(spans, 70 * sr, sr)
+    # Nothing leaks outside the backing line, e.g. the end of the previous line.
+    assert env[: int(a * sr)].max() == 0.0 and env[int(b * sr) + 1 :].max() == 0.0
+    assert 0 < env[int((a + FADE / 2) * sr)] < 1 and 0 < env[int((b - FADE / 2) * sr)] < 1
+    assert env[int((a + FADE) * sr) + 1 : int((b - FADE) * sr) - 1].min() == 1.0
+
+
+def test_adjacent_backing_lines_mix_as_one_span():
+    from autokaraoke.mix import backing_spans
+
+    p = _project()
+    for ln in p.lines[:2]:
+        ln.backing = True
+    gap_end = p.lines[1].span()[0]
+    p.lines[0].words[-1].syllables[-1].end = gap_end - 0.05
+    assert backing_spans(p) == [(p.lines[0].span()[0], p.lines[1].span()[1])]
 
 
 def test_ball_lands_on_syllable_start():
@@ -288,3 +301,20 @@ def test_ball_lands_on_syllable_start():
     xs, left, scale = syllable_starts(line, FixedWidth())
     assert scale == 1.0 and xs[0] == left
     assert xs[1] - xs[0] == 40 * len("Nel ") and xs[3] - xs[2] == 40 * len("di")
+
+
+def test_auto_split_off_keeps_words_whole(tmp_path):
+    from autokaraoke.text.edit import parse_notation, resplit, retext_line
+
+    assert parse_notation("(coro)", "it") == [["(co", "ro)"]]
+    assert parse_notation("(coro)", "it", auto=False) == [["(coro)"]]
+    assert resplit("dottore in sala\n(co|ro)", "it", auto=True) == "dot|to|re in sa|la\n(co|ro)"
+    assert resplit("(co|ro)", "it", auto=False) == "(coro)"
+
+    p = _project()
+    line = p.lines[0]
+    line.auto_split = False
+    retext_line(line, "Nel blu dipinto", "it")
+    assert [s.text for s in line.syllables()] == ["Nel", "blu", "dipinto"]
+    p.save(tmp_path)
+    assert Project.load(tmp_path).lines[0].auto_split is False

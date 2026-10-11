@@ -113,13 +113,15 @@ class ProposalDialog(QDialog):
 class LineEditDialog(QDialog):
     """Edit one lyric line in syllable notation; each extra text line becomes a new lyric line."""
 
-    def __init__(self, title: str, text: str, note: str = "", parent=None):
+    def __init__(self, title: str, text: str, note: str = "", parent=None, auto: bool = True,
+                 lang: str = ""):
         super().__init__(parent)
         self.setWindowTitle(title)
+        self.lang = lang
         v = QVBoxLayout(self)
         info = QLabel(
             "Words separated by spaces, syllables by '|' (e.g. <tt>cuo|re mi|o</tt>). "
-            "Without any '|' the words are split automatically.<br>"
+            "Without any '|' the words are split automatically, if the box below is checked.<br>"
             "Press Enter for a new line to <b>split</b> it in two or more lines. "
             "Timings are kept if the number of syllables does not change.<br>"
             "Ctrl+Enter to apply."
@@ -137,6 +139,20 @@ class LineEditDialog(QDialog):
         self.edit.setFont(f)
         self.edit.selectAll()
         v.addWidget(self.edit, 1)
+        row = QHBoxLayout()
+        self.auto = QCheckBox("Split words into syllables automatically")
+        self.auto.setChecked(auto)
+        self.auto.setToolTip("Uncheck for lines that should not be split, e.g. “(coro)”: each word "
+                             "becomes one block. Remembered for this line.")
+        self.auto.toggled.connect(self._resplit)
+        again = QPushButton("Split again")
+        again.setToolTip("Redo the syllable splits of the text above (whole words if the box is "
+                         "unchecked). Your '|' are replaced.")
+        again.clicked.connect(self._resplit)
+        row.addWidget(self.auto)
+        row.addStretch(1)
+        row.addWidget(again)
+        v.addLayout(row)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok
                                    | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
@@ -148,6 +164,14 @@ class LineEditDialog(QDialog):
     def text(self) -> str:
         return self.edit.toPlainText().strip()
 
+    def auto_split(self) -> bool:
+        return self.auto.isChecked()
+
+    def _resplit(self) -> None:
+        from autokaraoke.text.edit import resplit
+
+        self.edit.setPlainText(resplit(self.text(), self.lang, self.auto.isChecked()))
+
 
 HELP_SECTIONS = (
     ("Fixing a syllable by hand", None, (
@@ -156,8 +180,9 @@ HELP_SECTIONS = (
         "Drag the block or its edges, press <b>[</b> / <b>]</b> at the right moment while it plays, "
         "or type the times in <i>Start</i> / <i>End</i>. <b>Ctrl+← / →</b> nudges it by 10 ms "
         "(with Shift: 50 ms).",
-        "The <i>Spectrogram</i> view shows consonants as bright vertical streaks. <i>Snap</i> makes "
-        "dragged starts stick to the detected attacks (cyan ticks).",
+        "The <i>Spectrogram</i> view shows consonants as bright vertical streaks. Dragged starts and "
+        "edges snap to the detected vocal attacks (cyan ticks); hold <b>Ctrl</b> while dragging to "
+        "place them freely.",
     )),
     ("Keys", (
         ("Space", "Play / pause; the tap key when Tap sync is on"),
@@ -179,8 +204,11 @@ HELP_SECTIONS = (
         ("B", "Backing vocals on / off (blue lines, kept in the karaoke audio)"),
     ), None),
     ("Timeline mouse", (
-        ("Drag a block", "Move the syllable; touching neighbours follow"),
-        ("Drag a block edge", "Resize it; hold Alt to detach it from its neighbour"),
+        ("Drag a block", "Move the syllable; its start snaps to the cyan ticks, touching "
+                         "neighbours follow"),
+        ("Drag a block edge", "Resize it, snapping to the cyan ticks; Alt detaches it from its "
+                              "neighbour"),
+        ("Ctrl while dragging", "No snapping"),
         ("Drag the lane divider", "Resize the syllable lane"),
         ("Click empty area", "Seek"),
         ("Double-click a block", "Play from just before it"),

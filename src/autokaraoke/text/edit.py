@@ -4,20 +4,32 @@ from __future__ import annotations
 
 from autokaraoke.align.naive import time_line
 from autokaraoke.project import Line, Syllable, Word
-from autokaraoke.text.syllabify import syllabify_line
+from autokaraoke.text.syllabify import split_words, syllabify_line
 
 
 def to_notation(line: Line) -> str:
     return " ".join("|".join(s.text for s in w.syllables) for w in line.words)
 
 
-def parse_notation(notation: str, lang: str) -> list[list[str]]:
-    """Words of syllables; without any '|' the words are syllabified automatically."""
+def parse_notation(notation: str, lang: str, auto: bool = True) -> list[list[str]]:
+    """Words of syllables. With '|' the splits are explicit; without any, the words are
+    syllabified automatically, or kept whole when ``auto`` is off."""
     if "|" in notation:
         parsed = [[p for p in w.split("|") if p] for w in notation.split()]
-    else:
+    elif auto:
         parsed = syllabify_line(notation, lang)
+    else:
+        parsed = [[w] for w in split_words(notation)]
     return [w for w in parsed if w]
+
+
+def resplit(text: str, lang: str, auto: bool = True) -> str:
+    """Redo the syllable splits of every text line (whole words when ``auto`` is off)."""
+    out = []
+    for t in text.splitlines():
+        words = parse_notation(t.replace("|", ""), lang, auto)
+        out.append(" ".join("|".join(w) for w in words))
+    return "\n".join(out)
 
 
 def _words(parsed: list[list[str]]) -> list[Word]:
@@ -27,9 +39,10 @@ def _words(parsed: list[list[str]]) -> list[Word]:
 def retext_line(line: Line, notation: str, lang: str) -> None:
     """Replace the line's words/syllables, keeping timings when the syllable count matches.
 
-    Without any '|' in ``notation`` the words are syllabified automatically.
+    Without any '|' in ``notation`` the words are syllabified automatically, unless the
+    line has ``auto_split`` off.
     """
-    parsed = parse_notation(notation, lang)
+    parsed = parse_notation(notation, lang, line.auto_split)
     old = line.syllables()
     start = old[0].start if old and old[0].start is not None else line.start
     end = old[-1].end if old and old[-1].end is not None else line.end
@@ -53,7 +66,7 @@ def split_into_lines(line: Line, text: str, lang: str) -> list[Line]:
     Timings are kept when the total syllable count does not change, otherwise the old span
     is shared out by syllable count and spread evenly.
     """
-    chunks = [parse_notation(t, lang) for t in text.splitlines() if t.strip()]
+    chunks = [parse_notation(t, lang, line.auto_split) for t in text.splitlines() if t.strip()]
     chunks = [c for c in chunks if c]
     if len(chunks) <= 1:
         if chunks:
@@ -64,7 +77,8 @@ def split_into_lines(line: Line, text: str, lang: str) -> list[Line]:
     lines = []
     for parsed in chunks:
         words = _words(parsed)
-        lines.append(Line(text=" ".join(w.text for w in words), words=words, backing=line.backing))
+        lines.append(Line(text=" ".join(w.text for w in words), words=words, backing=line.backing,
+                          auto_split=line.auto_split))
     new = [s for ln in lines for s in ln.syllables()]
     if len(new) == len(old):
         for n, o in zip(new, old):
@@ -92,10 +106,11 @@ def merge_lines(a: Line, b: Line) -> Line:
     return merged
 
 
-def new_line(text: str, lang: str, prev: Line | None = None, nxt: Line | None = None) -> Line:
+def new_line(text: str, lang: str, prev: Line | None = None, nxt: Line | None = None,
+             auto: bool = True) -> Line:
     """A line to insert between ``prev`` and ``nxt``, roughly timed into the gap if there is one."""
-    words = _words(parse_notation(text, lang))
-    line = Line(text=" ".join(w.text for w in words), words=words)
+    words = _words(parse_notation(text, lang, auto))
+    line = Line(text=" ".join(w.text for w in words), words=words, auto_split=auto)
     n = len(line.syllables())
     if not n:
         return line

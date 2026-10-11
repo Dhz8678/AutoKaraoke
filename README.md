@@ -31,14 +31,18 @@ uv run autokaraoke gui ["projects/Artist - Title"]
 - **Lyrics**: from LRCLIB, from a local `.lrc`/`.txt`, or *Transcribe from vocals* when no lyrics
   exist anywhere. Fix them line by line in the list (right-click, or the *Lines* menu): edit
   (`Enter`; typing a new line splits it), insert (`Insert`), delete (`Delete`), merge (`Ctrl+J`).
+  In the editor, uncheck *Split words into syllables automatically* for lines like `(coro)` that
+  should stay whole; *Split again* redoes the splits.
 - **Backing vocals** (`B`): lines such as a choir or a yodel that the karaoke singer should not
   sing. They are shown in blue, stay synced, and their original vocals are mixed into the karaoke
-  track (*Audio → Karaoke* to listen); in the video they appear in italics, in brackets.
+  track from the start of their first syllable to the end of their last one, with a 50 ms fade
+  inside those edges (move the edges to place the fades). *Audio → Karaoke* plays the mix, rebuilt
+  as you edit; in the video they appear in italics, in brackets.
 - **Timeline**: drag syllable blocks or their edges (touching neighbours follow, Alt detaches);
   colors show confidence (green ok, yellow/red to check, blue edited by you). Drag the timeline's
   top edge to make it taller and the line above the syllables to resize them. *View* switches
-  between waveform and spectrogram (consonants show as bright vertical streaks); *Snap* makes
-  dragged starts stick to the detected attacks.
+  between waveform and spectrogram (consonants show as bright vertical streaks). Dragged starts
+  and edges snap to the detected vocal attacks (cyan ticks); hold Ctrl to place them freely.
 - **Fixing a syllable**: select it, then `P` plays it and `L` loops its line; drag it, press
   `[` / `]` at the right moment, type the times in *Start* / *End*, or nudge it with `Ctrl+←/→`.
   Right-click a block to split or merge syllables.

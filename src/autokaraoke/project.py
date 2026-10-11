@@ -48,6 +48,8 @@ class Line:
     note: str = ""
     # Backing vocals (choir, yodel, ...) kept in the karaoke mix instead of being sung.
     backing: bool = False
+    # Split new or edited words into syllables automatically (off e.g. for "(coro)").
+    auto_split: bool = True
 
     def syllables(self) -> list[Syllable]:
         return [s for w in self.words for s in w.syllables]
@@ -108,6 +110,7 @@ class Project:
                 end=ln.get("end"),
                 note=ln.get("note", ""),
                 backing=ln.get("backing", False),
+                auto_split=ln.get("auto_split", True),
                 words=[
                     Word(text=w["text"], syllables=[Syllable(**s) for s in w["syllables"]])
                     for w in ln.get("words", [])

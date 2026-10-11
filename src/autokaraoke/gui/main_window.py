@@ -112,6 +112,11 @@ class MainWindow(QMainWindow):
         # Audio analysis per file path: (peaks, spectrogram image, onsets).
         self.analysis: dict[str, tuple] = {}
         self.bg_jobs: set[Job] = set()
+        self.mix_spans: list | None = None  # backing spans the current karaoke mix was built with
+        self.mix_timer = QTimer(self)  # rebuild the mix shortly after backing timings change
+        self.mix_timer.setSingleShot(True)
+        self.mix_timer.setInterval(600)
+        self.mix_timer.timeout.connect(self._build_mix)
         self.settings = QSettings("AutoKaraoke", "AutoKaraoke")
 
         self.player = Player(self)
@@ -246,17 +251,13 @@ class MainWindow(QMainWindow):
         self.view.addItem("Spectrogram + wave", "both")
         self.view.setToolTip("Timeline display. In the spectrogram, consonants (t, k, s, p…) show as "
                              "bright vertical streaks: good syllable starts")
-        self.snap = QToolButton()
-        self.snap.setText("Snap")
-        self.snap.setCheckable(True)
-        self.snap.setToolTip("Snap syllable starts to detected attacks (cyan ticks) while dragging")
         zoom_in, zoom_out = QToolButton(), QToolButton()
         zoom_in.setText("+")
         zoom_out.setText("−")
         zoom_in.clicked.connect(lambda: self.canvas.zoom(1.4))
         zoom_out.clicked.connect(lambda: self.canvas.zoom(1 / 1.4))
         for wdg in (self.btn_play, self.time_label, QLabel("Speed"), self.speed, self.speed_label,
-                    QLabel("Audio"), self.track, QLabel("View"), self.view, self.snap):
+                    QLabel("Audio"), self.track, QLabel("View"), self.view):
             h.addWidget(wdg)
         h.addStretch()
         h.addWidget(QLabel("Zoom"))
@@ -359,7 +360,6 @@ class MainWindow(QMainWindow):
         self.speed_label.clicked.connect(lambda: self.speed.setValue(20))
         self.track.currentIndexChanged.connect(self._load_track)
         self.view.currentIndexChanged.connect(lambda: self.canvas.set_view_mode(self.view.currentData()))
-        self.snap.toggled.connect(self._snap_toggled)
         self.tap_mode.currentIndexChanged.connect(self._tap_mode_changed)
         self.canvas.seekRequested.connect(self._seek)
         self.canvas.playFromRequested.connect(self._play_from)
@@ -386,7 +386,6 @@ class MainWindow(QMainWindow):
                 split.restoreState(s.value(key))
         self.canvas.syl_h = int(s.value("timeline/syl_h", self.canvas.syl_h))
         self.view.setCurrentIndex(max(0, self.view.findData(s.value("timeline/view", "wave"))))
-        self.snap.setChecked(s.value("timeline/snap", "false") == "true")
         self.latency.setValue(int(s.value("tap/latency", 60)))
         self.hint.setText(HINTS[""])
 
@@ -397,7 +396,6 @@ class MainWindow(QMainWindow):
         s.setValue("split/right", self.right_split.saveState())
         s.setValue("timeline/syl_h", self.canvas.syl_h)
         s.setValue("timeline/view", self.view.currentData())
-        s.setValue("timeline/snap", "true" if self.snap.isChecked() else "false")
         s.setValue("tap/latency", self.latency.value())
 
     # ---- project ----------------------------------------------------------
@@ -512,10 +510,11 @@ class MainWindow(QMainWindow):
         """(Re)write the karaoke mix with the current backing lines, then play it."""
         if not self.project:
             return
-        from autokaraoke.mix import karaoke_mix
+        from autokaraoke.mix import backing_spans, karaoke_mix
 
         proj = copy.copy(self.project)
         proj.lines = copy.deepcopy(self.project.lines)
+        self.mix_spans = backing_spans(proj)
 
         def done(path) -> None:
             if path is None or self.track.currentData() != MIX_TRACK:
@@ -622,6 +621,11 @@ class MainWindow(QMainWindow):
         self.preview.update()
         self._update_inspector()
         self._mark_dirty()
+        if self.track.currentData() == MIX_TRACK:
+            from autokaraoke.mix import backing_spans
+
+            if backing_spans(self.project) != self.mix_spans:
+                self.mix_timer.start()  # hear the new fades without reselecting the track
 
     def _lines_changed(self, backing_changed: bool = False) -> None:
         """After lines were added, removed, split or re-flagged."""
@@ -630,6 +634,7 @@ class MainWindow(QMainWindow):
         if backing_changed:
             self._refresh_tracks()
             if self.track.currentData() == MIX_TRACK:
+                self.mix_timer.stop()
                 self._build_mix()
 
     # ---- navigation -------------------------------------------------------
@@ -663,10 +668,6 @@ class MainWindow(QMainWindow):
     def _speed_changed(self, value: int) -> None:
         self.speed_label.setText(f"{value * 5}%")
         self.player.set_rate(value * 5 / 100)
-
-    def _snap_toggled(self, on: bool) -> None:
-        self.canvas.snap = on
-        self.canvas.update()
 
     def _goto_line(self, row: int) -> None:
         if not self.project:
@@ -963,11 +964,12 @@ class MainWindow(QMainWindow):
         if not self.project or not 0 <= row < len(self.project.lines):
             return
         line = self.project.lines[row]
-        dlg = LineEditDialog("Edit line", to_notation(line), line.note, self)
+        dlg = LineEditDialog("Edit line", to_notation(line), line.note, self, line.auto_split,
+                             self.project.language)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         text = dlg.text()
-        if text == to_notation(line):
+        if text == to_notation(line) and dlg.auto_split() == line.auto_split:
             if line.note:
                 self.push_undo()
                 line.note = ""  # confirmed as is: dismiss the review hint
@@ -977,6 +979,7 @@ class MainWindow(QMainWindow):
         if not text:
             del self.project.lines[row]
         else:
+            line.auto_split = dlg.auto_split()
             new = text_edit.split_into_lines(line, text, self.project.language)
             for ln in new:
                 ln.note = ""
@@ -989,14 +992,15 @@ class MainWindow(QMainWindow):
             return
         rows = self.lyrics.selected_rows()
         row = rows[-1] if rows else len(self.project.lines) - 1
-        dlg = LineEditDialog("Insert line below", "", parent=self)
+        dlg = LineEditDialog("Insert line below", "", parent=self, lang=self.project.language)
         if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.text():
             return
         lines = self.project.lines
         prev = lines[row] if 0 <= row < len(lines) else None
         nxt = lines[row + 1] if row + 1 < len(lines) else None
         # Time all the text as one line in the gap, then split it: several lines share the gap.
-        joined = text_edit.new_line(" ".join(dlg.text().split()), self.project.language, prev, nxt)
+        joined = text_edit.new_line(" ".join(dlg.text().split()), self.project.language, prev, nxt,
+                                    dlg.auto_split())
         new = text_edit.split_into_lines(joined, dlg.text(), self.project.language)
         self.push_undo()
         lines[row + 1 : row + 1] = new

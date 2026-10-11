@@ -4,6 +4,8 @@ Mouse:
   drag block            move the syllable (touching neighbours follow)
   drag block edge       move that boundary (shared with a touching neighbour;
                         hold Alt to detach)
+                        dragged starts and edges snap to the detected vocal
+                        attacks (cyan ticks); hold Ctrl to place them freely
   drag lane divider     make the syllable lane taller / shorter
   click empty area      seek
   double-click block    play from just before the syllable
@@ -38,10 +40,12 @@ DIVIDER_PX = 4
 BACKING = QColor(90, 150, 255)
 
 HINTS = {
-    "move": "Drag: move the syllable (touching neighbours stretch) · Double-click: play it · "
-            "Right-click: more",
-    "start": "Drag: move the start (shared with a touching neighbour; hold Alt to detach)",
-    "end": "Drag: move the end (shared with a touching neighbour; hold Alt to detach)",
+    "move": "Drag: move the syllable, its start snaps to the cyan ticks (Ctrl: no snap) · "
+            "Double-click: play it · Right-click: more",
+    "start": "Drag: move the start, snaps to the cyan ticks (Ctrl: no snap; Alt: detach from the "
+             "touching neighbour)",
+    "end": "Drag: move the end, snaps to the cyan ticks (Ctrl: no snap; Alt: detach from the "
+           "touching neighbour)",
     "divider": "Drag: resize the syllable lane",
     "": "Click: seek · Wheel: scroll · Ctrl+wheel: zoom · Select a syllable, then "
         "[ / ] set its start / end at the playhead",
@@ -115,7 +119,8 @@ class TimelineCanvas(QWidget):
         self.spec_image: QImage | None = None
         self.onsets = np.zeros(0)
         self.view_mode = "wave"  # "wave", "spec", "both"
-        self.snap = False
+        self.snap = True  # dragged edges stick to onsets; Ctrl while dragging disables it
+        self._snapped: float | None = None  # onset the dragged edge is stuck to
         self.syl_h = 48
         self.duration = 0.0
         self.view_start = 0.0
@@ -229,6 +234,10 @@ class TimelineCanvas(QWidget):
         self._paint_signal(p, w)
         self._paint_lines(p)
         self._paint_syllables(p)
+        if self._drag is not None and self._snapped is not None:
+            x = self.x_of(self._snapped)
+            p.setPen(QPen(QColor(80, 230, 230), 1, Qt.PenStyle.DashLine))
+            p.drawLine(QPointF(x, RULER_H), QPointF(x, h))
         x = self.x_of(self.playhead)
         p.setPen(QPen(QColor(255, 80, 80), 2))
         p.drawLine(QPointF(x, 0), QPointF(x, h))
@@ -269,7 +278,7 @@ class TimelineCanvas(QWidget):
                     p.drawLine(QPointF(x, mid - d), QPointF(x, mid + d))
         if len(self.onsets):
             a, b = np.searchsorted(self.onsets, [self.view_start, self.t_of(w)])
-            p.setPen(QPen(QColor(80, 230, 230, 230 if self.snap else 160), 2))
+            p.setPen(QPen(QColor(80, 230, 230, 220), 2))
             for t in self.onsets[a:b]:
                 x = self.x_of(float(t))
                 p.drawLine(QPointF(x, line_top - 12), QPointF(x, line_top))
@@ -307,9 +316,10 @@ class TimelineCanvas(QWidget):
         f.setPixelSize(int(min(28, max(11, syl_h * 0.32))))
         p.setFont(f)
         w = self.width()
-        if self.snap and len(self.onsets):
+        dragging = self._drag is not None and self._drag.mode != "divider"
+        if dragging and len(self.onsets):  # guides for snapping
             a, b = np.searchsorted(self.onsets, [self.view_start, self.t_of(w)])
-            p.setPen(QPen(QColor(80, 230, 230, 50), 1))
+            p.setPen(QPen(QColor(80, 230, 230, 60), 1))
             for t in self.onsets[a:b]:
                 x = self.x_of(float(t))
                 p.drawLine(QPointF(x, top), QPointF(x, top + syl_h))
@@ -382,12 +392,16 @@ class TimelineCanvas(QWidget):
         return _Drag(i, mode, origin_t, [span(prev), span(s), span(nxt)], link_prev, link_next)
 
     def _snap(self, t: float) -> float:
+        """Nearest onset within SNAP_PX of ``t``, else ``t``; remembers what it stuck to."""
         if not self.snap or not len(self.onsets):
             return t
         k = int(np.searchsorted(self.onsets, t))
         best = min((self.onsets[j] for j in (k - 1, k) if 0 <= j < len(self.onsets)),
                    key=lambda o: abs(o - t))
-        return float(best) if abs(best - t) * self.pps <= SNAP_PX else t
+        if abs(best - t) * self.pps <= SNAP_PX:
+            self._snapped = float(best)
+            return float(best)
+        return t
 
     def _apply_drag(self, d: _Drag, dt: float, snap: bool = True) -> None:
         s = self.sylls[d.index]
@@ -397,6 +411,7 @@ class TimelineCanvas(QWidget):
         lo = (ps + MIN_DUR if d.link_prev else pe) if prev else 0.0
         hi = (ne - MIN_DUR if d.link_next else ns) if nxt else self.duration
 
+        self._snapped = None
         if d.mode == "move":
             if snap:
                 dt = self._snap(ss + dt) - ss
@@ -406,7 +421,11 @@ class TimelineCanvas(QWidget):
             t = self._snap(ss + dt) if snap else ss + dt
             s.start = min(max(t, lo), se - MIN_DUR)
         else:
-            s.end = max(min(se + dt, hi), ss + MIN_DUR)
+            t = self._snap(se + dt) if snap else se + dt
+            s.end = max(min(t, hi), ss + MIN_DUR)
+        if self._snapped is not None and min(abs(self._snapped - s.start),
+                                             abs(self._snapped - s.end)) > 1e-6:
+            self._snapped = None  # clamped by a neighbour: not actually stuck
         if d.link_prev and prev is not None:
             prev.end = s.start
             prev.confidence = 1.0
@@ -500,12 +519,15 @@ class TimelineCanvas(QWidget):
             self.syl_h = self._syl_h()
             self.update()
             return
-        self._apply_drag(d, self.t_of(pos.x()) - d.origin_t)
+        free = bool(e.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        self._apply_drag(d, self.t_of(pos.x()) - d.origin_t, snap=not free)
 
     def mouseReleaseEvent(self, e: QMouseEvent) -> None:
         if self._drag is not None:
             mode = self._drag.mode
             self._drag = None
+            self._snapped = None
+            self.update()
             if mode != "divider":
                 self.edited.emit()
 
