@@ -126,7 +126,7 @@ def test_ball_events_follow_syllables():
 
     kf = ball_keyframes([100, 200, 300], [1.0, 1.4, 3.0], [1.3, 1.9, 3.5], 40, 0, 0.0)
     assert [t for t, _, _ in kf] == sorted(t for t, _, _ in kf)
-    for x, t in ((100, 1.0), (200, 1.4), (300, 3.0)):
+    for x, t in ((100, 1.0), (200, 1.4), (300, 3.0)):  # lands where each syllable starts
         bx, dy = ball_at(kf, t)
         assert abs(bx - x) < 1e-6 and abs(dy) < 1e-6
     assert ball_at(kf, 1.2)[1] < -20  # mid-hop, up in the air
@@ -279,3 +279,12 @@ def test_backing_envelope():
     assert env[int(a * 100) + 1] == 1.0 and env[int(b * 100) - 1] == 1.0
     assert env[int((a - FADE) * 100) - 2] == 0.0 and env[int((b + FADE) * 100) + 2] == 0.0
     assert 0 < env[int((a - FADE / 2) * 100)] < 1
+
+
+def test_ball_lands_on_syllable_start():
+    from autokaraoke.export.ass import syllable_starts
+
+    line = _project().lines[0]  # "Nel blu di|pin|to di blu", 40 px per character
+    xs, left, scale = syllable_starts(line, FixedWidth())
+    assert scale == 1.0 and xs[0] == left
+    assert xs[1] - xs[0] == 40 * len("Nel ") and xs[3] - xs[2] == 40 * len("di")

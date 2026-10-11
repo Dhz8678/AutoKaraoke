@@ -415,6 +415,7 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Open failed", str(e))
             return
+        self.player.reset()  # another song: start from the beginning, paused
         self._set_project(proj)
         self.undo_stack.clear()
         self.redo_stack.clear()
@@ -1067,12 +1068,16 @@ class MainWindow(QMainWindow):
             pos = self.player.position()
             self._set_project(Project.load(self.project.path))
             self.undo_stack = undo
+            # The stems may have been rewritten (Separate): re-read the file, keeping
+            # position and play state.
+            data = self.track.currentData()
+            if data and data != MIX_TRACK:
+                self.player.load(Path(data), reload=True)
             self.player.seek(pos)
 
     def _prepare_job(self) -> Path | None:
         if not self.project or not self.project.path:
             return None
-        self.player.pause()
         if self.dirty:
             self.save()
         return self.project.path
@@ -1194,7 +1199,6 @@ class MainWindow(QMainWindow):
         from autokaraoke.export.ass import project_style
         from autokaraoke.gui.render_dialog import RenderDialog
 
-        self.player.pause()
         dlg = RenderDialog(self.project, project_style(self.project),
                            self.project.path / f"{self.project.slug}.mkv", self)
         result = dlg.exec()

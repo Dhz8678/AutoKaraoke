@@ -209,19 +209,20 @@ def fit_scale(width: float) -> float:
     return min(1.0, room / width) if width > 0 else 1.0
 
 
-def syllable_centres(line: Line, measure, parens: bool = False) -> tuple[list[float], float, float]:
-    """x centres of the syllables of a centred line, its left edge and scale (ASS pixels)."""
+def syllable_starts(line: Line, measure, parens: bool = False) -> tuple[list[float], float, float]:
+    """x where each syllable of a centred line begins, its left edge and scale (ASS pixels).
+
+    The ball lands there, where the colour fill of the syllable starts.
+    """
     ps = pieces(line, parens)
     full = "".join(t for t, _, _ in ps)
     scale = fit_scale(measure.width(full))
     left = PLAY_W / 2 - measure.width(full) * scale / 2
-    centres, prefix = [], ""
+    starts, prefix = [], ""
     for text, _, _ in ps:
-        a = measure.width(prefix)
-        b = measure.width(prefix + text.rstrip())
-        centres.append(left + (a + b) / 2 * scale)
+        starts.append(left + measure.width(prefix) * scale)
         prefix += text
-    return centres, left, scale
+    return starts, left, scale
 
 
 HOP_MAX = 0.6  # seconds: longer gaps wait on the syllable, then hop
@@ -263,8 +264,8 @@ def ball_keyframes(xs: list[float], starts: list[float], ends: list[float], heig
 
 def line_ball(line: Line, measure, placement: Placement, st: AssStyle):
     """Ball keyframes and landing height for a sung line, or None."""
-    centres, left, scale = syllable_centres(line, measure)
-    timed = [(c, s.start, s.end) for c, s in zip(centres, line.syllables())
+    xs, left, scale = syllable_starts(line, measure)
+    timed = [(x, s.start, s.end) for x, s in zip(xs, line.syllables())
              if s.start is not None and s.end is not None]
     if not timed:
         return None

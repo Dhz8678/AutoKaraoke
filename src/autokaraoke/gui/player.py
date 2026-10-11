@@ -50,6 +50,16 @@ class Player(QObject):
             self._last_wall = time.monotonic()
             self.stateChanged.emit(playing)
 
+    def reset(self) -> None:
+        """Stop and forget the current source: the next one starts paused from 0."""
+        self._pending = None
+        self._player.stop()
+        self._source = None
+        self._player.setSource(QUrl())
+        self._last_pos = 0.0
+        self._last_wall = time.monotonic()
+        self.stateChanged.emit(False)
+
     def _on_status(self, status: QMediaPlayer.MediaStatus) -> None:
         if status == QMediaPlayer.MediaStatus.InvalidMedia:
             self._pending = None
