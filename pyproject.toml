@@ -1,9 +1,9 @@
 [project]
 name = "autokaraoke"
-version = "0.1.0"
+version = "1.0.0"
 description = "Semi-automatic karaoke track generator with syllable-level sync"
 readme = "README.md"
-license = "MIT"
+license = "GPL-3.0-or-later"
 requires-python = ">=3.11,<3.14"
 dependencies = [
     "httpx>=0.27",
@@ -22,9 +22,10 @@ dependencies = [
 download = ["yt-dlp"]
 # Vocal separation (UVR models via python-audio-separator).
 # audioread is imported by audio-separator but no longer pulled in transitively.
-separation = ["audio-separator[gpu]>=0.30", "audioread"]
+# torch / torchvision are listed so that Windows gets the CUDA build (see tool.uv.sources).
+separation = ["audio-separator[gpu]>=0.30", "audioread", "torch", "torchvision"]
 # Automatic word/syllable alignment.
-align = ["qwen-asr", "librosa>=0.10", "uroman", "num2words"]
+align = ["qwen-asr", "librosa>=0.10", "uroman", "num2words", "torch"]
 gui = ["PySide6>=6.7"]
 all = ["autokaraoke[download,separation,align,gui]"]
 
@@ -37,6 +38,16 @@ dev = ["pytest>=8"]
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# PyPI has CUDA builds of torch for Linux only; Windows gets them from the PyTorch index.
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+torchvision = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]
+
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/autokaraoke"]

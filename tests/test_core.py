@@ -318,3 +318,12 @@ def test_auto_split_off_keeps_words_whole(tmp_path):
     assert [s.text for s in line.syllables()] == ["Nel", "blu", "dipinto"]
     p.save(tmp_path)
     assert Project.load(tmp_path).lines[0].auto_split is False
+
+
+def test_backing_line_already_in_brackets_is_not_wrapped_again():
+    from autokaraoke.export.ass import pieces
+    from autokaraoke.text.edit import retext_line
+
+    line = _project().lines[0]
+    retext_line(line, "[Coro]", "it")
+    assert "".join(t for t, _, _ in pieces(line, parens=True)) == "[Coro]"

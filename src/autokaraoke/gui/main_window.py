@@ -33,7 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from autokaraoke import config, steps
+from autokaraoke import components, config, steps
 from autokaraoke.gui.dialogs import HelpDialog, LineEditDialog, ProposalDialog, SettingsDialog
 from autokaraoke.gui.jobs import Job
 from autokaraoke.gui.lyrics_panel import LyricsPanel, fmt_time
@@ -69,8 +69,8 @@ class NewProjectDialog(QDialog):
         self.artist = QLineEdit()
         self.title = QLineEdit()
         self.lang = QLineEdit()
-        self.artist.setPlaceholderText("guessed from file name / metadata")
-        self.title.setPlaceholderText("guessed from file name / metadata")
+        self.artist.setPlaceholderText("guessed from the file name (Artist - Title)")
+        self.title.setPlaceholderText("guessed from the file name (Artist - Title)")
         self.lang.setPlaceholderText("auto (e.g. it, en, es)")
         form.addRow("Artist", self.artist)
         form.addRow("Title", self.title)
@@ -140,6 +140,8 @@ class MainWindow(QMainWindow):
         QApplication.instance().installEventFilter(self)
         self._update_title()
         self._set_enabled()
+        if components.packaged() and components.state() != "ok":
+            QTimer.singleShot(400, lambda: self._ensure_ai(None))
 
     # ---- UI construction --------------------------------------------------
 
@@ -380,6 +382,8 @@ class MainWindow(QMainWindow):
 
     def _restore_settings(self) -> None:
         s = self.settings
+        if s.value("window/geometry") is not None:
+            self.restoreGeometry(s.value("window/geometry"))
         for key, split in (("split/main", self.main_split), ("split/top", self.top_split),
                            ("split/right", self.right_split)):
             if s.value(key) is not None:
@@ -391,6 +395,7 @@ class MainWindow(QMainWindow):
 
     def _save_settings(self) -> None:
         s = self.settings
+        s.setValue("window/geometry", self.saveGeometry())
         s.setValue("split/main", self.main_split.saveState())
         s.setValue("split/top", self.top_split.saveState())
         s.setValue("split/right", self.right_split.saveState())
@@ -1128,6 +1133,8 @@ class MainWindow(QMainWindow):
         box.exec()
         clicked = box.clickedButton()
         if clicked == b_audio:
+            if not self._ensure_ai(self.fetch_lyrics):
+                return
             self._run("Lyrics from audio",
                       lambda log: steps.lyrics_from_audio(Project.load(path), log=log), self._reload)
             return
@@ -1150,6 +1157,8 @@ class MainWindow(QMainWindow):
                                     "This needs an OpenRouter API key (a song costs a fraction of a cent).")
             if not self.show_settings() or not config.openrouter_key():
                 return
+        if not self._ensure_ai(self.fix_lyrics):
+            return
         path = self._prepare_job()
         if path is None or not self.project.lines:
             return
@@ -1181,7 +1190,40 @@ class MainWindow(QMainWindow):
         self.act_fix.setVisible(config.experimental_llm())
         return ok
 
+    def _ensure_ai(self, then) -> bool:
+        """True if the AI components are installed; otherwise offer to download them and
+        run ``then`` once they are ready."""
+        st = components.state()
+        if st == "ok" or (self.job and self.job.isRunning()):
+            return st == "ok"
+        if not components.packaged():
+            QMessageBox.information(
+                self, "AI components missing",
+                "Vocal separation and syncing need the optional dependencies:\n\n"
+                "uv sync --extra separation --extra align --extra gui")
+            return False
+        if st == "outdated":
+            text = ("This version of AutoKaraoke uses updated AI components. Download the update now?\n"
+                    "(Only what changed is downloaded.)")
+        else:
+            text = ("Vocal separation and automatic syncing need the AI components: about 4 GB "
+                    "to download once (PyTorch with GPU support, speech models' libraries).\n\n"
+                    "The models themselves (~5 GB more) are downloaded the first time each step runs.\n\n"
+                    "Download the components now?")
+        if QMessageBox.question(self, "AI components", text) != QMessageBox.StandardButton.Yes:
+            return st == "outdated"  # the previous components still work
+
+        def done(_result) -> None:
+            self.log("AI components ready")
+            if then is not None:
+                QTimer.singleShot(0, then)
+
+        self._run("Downloading AI components", components.install, done)
+        return False
+
     def separate(self) -> None:
+        if not self._ensure_ai(self.separate):
+            return
         path = self._prepare_job()
         if path is not None:
             self._run("Vocal separation", lambda log: steps.separate(Project.load(path), log=log),
@@ -1197,6 +1239,8 @@ class MainWindow(QMainWindow):
             if r != QMessageBox.StandardButton.Yes:
                 return
         engine = self.engine.currentData()
+        if engine != "naive" and not self._ensure_ai(self.align):
+            return
         self._run("Auto-sync", lambda log: steps.align(Project.load(path), engine, log=log), self._reload)
 
     def render(self) -> None:

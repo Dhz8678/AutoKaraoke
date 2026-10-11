@@ -1,0 +1,47 @@
+#!/bin/bash
+# AutoKaraoke AppImage launcher.
+# First start: uv installs Python and the editor's libraries (~300 MB) into
+# ~/.local/share/autokaraoke; the AI components are downloaded from inside the app.
+set -e
+HERE="$(dirname "$(readlink -f "$0")")"
+APP="$HERE/app"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}/autokaraoke"
+LOCK_HASH="$(cat "$APP/LOCKHASH")"
+
+export PATH="$HERE/usr/bin:$PATH"
+export UV_PROJECT_ENVIRONMENT="$DATA/venv"
+export UV_PYTHON_INSTALL_DIR="$DATA/python"
+export UV_PYTHON_PREFERENCE=only-managed
+export AUTOKARAOKE_UV="$HERE/usr/bin/uv"
+export AUTOKARAOKE_APP="$APP"
+export AUTOKARAOKE_LOCK_HASH="$LOCK_HASH"
+export AUTOKARAOKE_PROJECTS="${AUTOKARAOKE_PROJECTS:-$HOME/AutoKaraoke}"
+export PYTHONPATH="$APP/src"
+unset PYTHONHOME
+
+base_ready() { [ -f "$DATA/venv/.autokaraoke-base-$LOCK_HASH" ]; }
+
+if ! base_ready; then
+    mkdir -p "$DATA"
+    sync_base() {
+        "$AUTOKARAOKE_UV" sync --project "$APP" --frozen --no-install-project --no-dev --inexact --extra gui
+    }
+    msg="Preparing AutoKaraoke (first start or update: downloads about 300 MB)..."
+    if [ -t 1 ]; then
+        echo "$msg"
+        sync_base
+    elif command -v zenity >/dev/null; then
+        sync_base > "$DATA/install.log" 2>&1 &
+        pid=$!
+        ( while kill -0 $pid 2>/dev/null; do echo "#$msg"; sleep 1; done ) |
+            zenity --progress --pulsate --auto-close --no-cancel --title=AutoKaraoke --text="$msg" || true
+        wait $pid
+    else
+        command -v notify-send >/dev/null && notify-send AutoKaraoke "$msg" || true
+        sync_base > "$DATA/install.log" 2>&1
+    fi
+    touch "$DATA/venv/.autokaraoke-base-$LOCK_HASH"
+fi
+
+mkdir -p "$AUTOKARAOKE_PROJECTS"
+exec "$DATA/venv/bin/python" -m autokaraoke.cli "${@:-gui}"

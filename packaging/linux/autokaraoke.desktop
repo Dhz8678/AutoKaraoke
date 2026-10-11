@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=AutoKaraoke
+Comment=Make karaoke videos with syllable-level sync
+Exec=AutoKaraoke
+Icon=autokaraoke
+Categories=AudioVideo;Audio;Video;
+Terminal=false

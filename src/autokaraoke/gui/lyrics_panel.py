@@ -52,7 +52,8 @@ class LyricsPanel(QListWidget):
             mark = "  ⚠" if line.note else ""
             text = to_notation(line).replace("|", "·")
             if line.backing:
-                text = f"♪ ({text})"
+                bracketed = text[:1] in "([{" and text[-1:] in ")]}"
+                text = f"♪ {text}" if bracketed else f"♪ ({text})"
             item = QListWidgetItem(f"{fmt_time(start)}   {text}{mark}")
             if line.backing:
                 item.setForeground(QBrush(BACKING))

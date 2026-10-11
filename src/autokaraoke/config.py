@@ -44,7 +44,10 @@ def _load_dotenv(path: Path = Path(".env")) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip("\"'"))
 
 
-CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "autokaraoke"
+if os.name == "nt":
+    CONFIG_DIR = Path(os.environ.get("APPDATA", Path.home())) / "autokaraoke"
+else:
+    CONFIG_DIR = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "autokaraoke"
 _load_dotenv()
 _load_dotenv(CONFIG_DIR / ".env")
 

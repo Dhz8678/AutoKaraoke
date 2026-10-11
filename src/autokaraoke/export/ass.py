@@ -122,14 +122,15 @@ def _escape(text: str) -> str:
 def pieces(line: Line, parens: bool = False) -> list[tuple[str, float | None, float | None]]:
     """(text, start, end) per syllable, with the space after the last syllable of each word.
 
-    ``parens`` wraps the line in brackets (backing vocals).
+    ``parens`` wraps the line in brackets (backing vocals) unless it already is, e.g. "[Coro]".
     """
     out = []
     for wi, word in enumerate(line.words):
         for si, s in enumerate(word.syllables):
             text = s.text + (" " if si == len(word.syllables) - 1 and wi < len(line.words) - 1 else "")
             out.append([text, s.start, s.end])
-    if parens and out:
+    already = line.text.strip()[:1] in "([{" and line.text.strip()[-1:] in ")]}"
+    if parens and out and not already:
         out[0][0] = "(" + out[0][0]
         out[-1][0] += ")"
     return [tuple(p) for p in out]

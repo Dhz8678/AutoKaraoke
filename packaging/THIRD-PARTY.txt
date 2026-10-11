@@ -1,0 +1,19 @@
+Third-party software in the AutoKaraoke release packages
+========================================================
+
+FFmpeg (ffmpeg, ffprobe)
+  GPL build by BtbN: https://github.com/BtbN/FFmpeg-Builds
+  License: GNU GPL v3, see ffmpeg-LICENSE.txt. Source: https://ffmpeg.org/download.html
+  It runs as a separate program. AutoKaraoke itself is GPL-3.0-or-later.
+
+uv
+  https://github.com/astral-sh/uv, MIT or Apache-2.0.
+
+Downloaded on first use (not included in the packages)
+  Python (python-build-standalone) and the Python libraries listed in uv.lock, each
+  under its own license (PySide6 / Qt: LGPL-3.0; PyTorch: BSD-3-Clause; ...).
+
+  AI models, downloaded the first time each step runs:
+  - Qwen3-ForcedAligner-0.6B, Qwen3-ASR-1.7B: Apache-2.0
+  - MMS-300M forced aligner: CC-BY-NC-4.0 (non-commercial use only)
+  - MelBand RoFormer vocal separation model: see its model card
