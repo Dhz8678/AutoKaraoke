@@ -13,6 +13,8 @@ dependencies = [
     "soundfile>=0.12",
     "pyphen>=0.15",
     "langdetect>=1.0.9",
+    # Text measurement for the bouncing ball (matches libass layout).
+    "pillow>=10",
 ]
 
 [project.optional-dependencies]

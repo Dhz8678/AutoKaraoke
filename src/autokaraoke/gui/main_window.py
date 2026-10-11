@@ -1189,21 +1189,30 @@ class MainWindow(QMainWindow):
         self._run("Auto-sync", lambda log: steps.align(Project.load(path), engine, log=log), self._reload)
 
     def render(self) -> None:
+        if not self.project or not self.project.path:
+            return
+        from autokaraoke.export.ass import project_style
+        from autokaraoke.gui.render_dialog import RenderDialog
+
+        self.player.pause()
+        dlg = RenderDialog(self.project, project_style(self.project),
+                           self.project.path / f"{self.project.slug}.mkv", self)
+        result = dlg.exec()
+        if result == QDialog.DialogCode.Rejected:
+            return
+        style = dlg.style()
+        if style.to_dict() != project_style(self.project).to_dict():
+            self.project.render = style.to_dict()
+            self._mark_dirty()
+        self.preview.set_style(style)
+        if result != QDialog.DialogCode.Accepted:  # "Save style" only
+            return
+        out = dlg.output_path()
         path = self._prepare_job()
-        if path is None:
+        if path is None or not str(out):
             return
-        out, _ = QFileDialog.getSaveFileName(
-            self, "Render video", str(path / f"{self.project.slug}.mkv"), "Video (*.mkv *.mp4)"
-        )
-        if not out:
-            return
-        bg = None
-        if QMessageBox.question(self, "Background", "Use a background image?") == \
-                QMessageBox.StandardButton.Yes:
-            f, _ = QFileDialog.getOpenFileName(self, "Background image", "", "Images (*.png *.jpg *.jpeg *.webp)")
-            bg = Path(f) if f else None
         self._run("Rendering",
-                  lambda log: steps.render(Project.load(path), Path(out), bg, log=log),
+                  lambda log: steps.render(Project.load(path), out, log=log, style=style),
                   lambda result: self.log(f"Video ready: {result}"))
 
     def export(self) -> None:

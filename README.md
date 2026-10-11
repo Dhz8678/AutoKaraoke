@@ -29,15 +29,25 @@ uv run autokaraoke gui ["projects/Artist - Title"]
 *New* → pick an audio file → *Separate* → *Auto-sync* → fix what is highlighted → *Render video*.
 
 - **Lyrics**: from LRCLIB, from a local `.lrc`/`.txt`, or *Transcribe from vocals* when no lyrics
-  exist anywhere.
-
+  exist anywhere. Fix them line by line in the list (right-click, or the *Lines* menu): edit
+  (`Enter`; typing a new line splits it), insert (`Insert`), delete (`Delete`), merge (`Ctrl+J`).
+- **Backing vocals** (`B`): lines such as a choir or a yodel that the karaoke singer should not
+  sing. They are shown in blue, stay synced, and their original vocals are mixed into the karaoke
+  track (*Audio → Karaoke* to listen); in the video they appear in italics, in brackets.
 - **Timeline**: drag syllable blocks or their edges (touching neighbours follow, Alt detaches);
-  colors show confidence (green ok, yellow/red to check, blue edited by you).
+  colors show confidence (green ok, yellow/red to check, blue edited by you). Drag the timeline's
+  top edge to make it taller and the line above the syllables to resize them. *View* switches
+  between waveform and spectrogram (consonants show as bright vertical streaks); *Snap* makes
+  dragged starts stick to the detected attacks.
+- **Fixing a syllable**: select it, then `P` plays it and `L` loops its line; drag it, press
+  `[` / `]` at the right moment, type the times in *Start* / *End*, or nudge it with `Ctrl+←/→`.
+  Right-click a block to split or merge syllables.
 - **Tap sync**: choose *Hold* (press = syllable start, release = end) or *Tap* (each tap starts a
-  syllable), select the first syllable, then press Space along with the song. Slow it down to
-  0.5× if needed; adjust the latency compensation to your reaction time.
-- `[` / `]` set the selected syllable start/end at the playhead; double-click a lyric line to edit
-  its text and syllable splits (`cuo|re`). F1 lists all shortcuts.
+  syllable), select the first syllable, then press Space along with the song. Slow it down with
+  the *Speed* slider (25–150 %) if needed; adjust the latency compensation to your reaction time.
+- **Render video**: font, size, colours (sung, to sing, next line, backing, background…), layout
+  (two lines taking turns, or current + next) and a bouncing ball over the syllables, with a live
+  preview. *Save as default* uses the style for other projects. F1 lists all shortcuts.
 
 ### Command line
 
@@ -49,7 +59,7 @@ uv run autokaraoke separate "projects/Artist - Title"
 uv run autokaraoke lyrics "projects/Artist - Title" --from-audio   # only if LRCLIB has nothing
 uv run autokaraoke reconcile "projects/Artist - Title"   # experimental, see below
 uv run autokaraoke align "projects/Artist - Title"    # --engine qwen|mms|naive
-uv run autokaraoke render "projects/Artist - Title"   # --background image.jpg
+uv run autokaraoke render "projects/Artist - Title"   # --background image.jpg --layout scroll --no-ball
 uv run autokaraoke export "projects/Artist - Title" --format lrc
 ```
 

@@ -268,12 +268,15 @@ def align(proj: Project, engine: str = "qwen", cross_check: bool = True, log: Lo
 
 
 def render(proj: Project, output: Path | None = None, background: Path | None = None,
-           log: Log = _noop, background_color: str = "0x101018") -> Path:
+           log: Log = _noop, background_color: str | None = None, style=None) -> Path:
+    """``style`` (export.ass.AssStyle) defaults to the project's saved style."""
     from autokaraoke.render import render as run_render
 
     assert proj.path is not None
     out = output or proj.path / f"{proj.slug}.mkv"
+    if any(ln.backing for ln in proj.lines):
+        log("Mixing backing vocals into the karaoke track")
     log("Rendering video")
-    run_render(proj, out, background=background, background_color=background_color)
+    run_render(proj, out, background=background, background_color=background_color, style=style)
     log(f"Rendered {out}")
     return out

@@ -268,10 +268,10 @@ class TimelineCanvas(QWidget):
                     p.drawLine(QPointF(x, mid - d), QPointF(x, mid + d))
         if len(self.onsets):
             a, b = np.searchsorted(self.onsets, [self.view_start, self.t_of(w)])
-            p.setPen(QPen(QColor(80, 230, 230, 200 if self.snap else 120), 1))
+            p.setPen(QPen(QColor(80, 230, 230, 230 if self.snap else 160), 2))
             for t in self.onsets[a:b]:
                 x = self.x_of(float(t))
-                p.drawLine(QPointF(x, line_top - 8), QPointF(x, line_top))
+                p.drawLine(QPointF(x, line_top - 12), QPointF(x, line_top))
         p.fillRect(QRectF(0, line_top - 1, w, 1), QColor(70, 70, 85))
 
     def _paint_lines(self, p: QPainter) -> None:

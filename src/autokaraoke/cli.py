@@ -159,10 +159,27 @@ def render(
     project: ProjectArg,
     output: Annotated[Optional[Path], typer.Option(help="Output video (.mkv or .mp4)")] = None,
     background: Annotated[Optional[Path], typer.Option(help="Background image")] = None,
-    background_color: Annotated[str, typer.Option(help="Background colour without an image, e.g. 0x101018 or navy")] = "0x101018",
+    background_color: Annotated[Optional[str], typer.Option(help="Background colour without an image, e.g. #101018")] = None,
+    layout: Annotated[Optional[str], typer.Option(help="alternate (two lines take turns) or scroll")] = None,
+    ball: Annotated[Optional[bool], typer.Option("--ball/--no-ball", help="Bouncing ball over the syllables")] = None,
+    font: Annotated[Optional[str], typer.Option(help="Font family")] = None,
+    size: Annotated[Optional[int], typer.Option(help="Font size (pixels at 1080p)")] = None,
+    save_style: Annotated[bool, typer.Option(help="Store these options in the project")] = False,
 ) -> None:
-    """Render the karaoke video with instrumental, original and vocals audio tracks."""
-    out = steps.render(Project.load(project), output, background, log=log, background_color=background_color)
+    """Render the karaoke video with karaoke/instrumental, original and vocals audio tracks.
+
+    The style comes from the project (set in the editor's Render dialog), then the options.
+    """
+    from autokaraoke.export.ass import AssStyle, project_style
+
+    proj = Project.load(project)
+    overrides = {"layout": layout, "ball": ball, "font": font, "size": size,
+                 "background_color": background_color}
+    style = AssStyle.from_dict(overrides, project_style(proj))
+    if save_style:
+        proj.render = style.to_dict()
+        proj.save()
+    out = steps.render(proj, output, background, log=log, style=style)
     console.print(f"[green]Done:[/] {out}")
 
 

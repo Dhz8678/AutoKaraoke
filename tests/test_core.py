@@ -1,7 +1,7 @@
 import re
 
 from autokaraoke.align.naive import time_lines
-from autokaraoke.export.ass import build_ass, karaoke_text
+from autokaraoke.export.ass import ass_time, build_ass, karaoke_text
 from autokaraoke.export.lrc import build_lrc
 from autokaraoke.project import Project
 from autokaraoke.sources.lrclib import parse_lrc
@@ -67,14 +67,100 @@ def test_karaoke_durations_sum_to_line_span():
     assert re.sub(r"\{[^}]*\}", "", text) == line.text
 
 
+class FixedWidth:
+    """Text measure stub: 40 px per character."""
+
+    size = 80
+
+    def width(self, text):
+        return 40.0 * len(text)
+
+
+def _events(ass, style):
+    return [ln for ln in ass.splitlines() if ln.startswith("Dialogue") and f",{style}," in ln]
+
+
 def test_ass_has_one_event_per_line_and_title():
-    ass = build_ass(_project())
-    assert ass.count("Dialogue: 0,") == 4  # first line at 1s: no title card
+    ass = build_ass(_project(), measure=FixedWidth())
+    assert len(_events(ass, "Karaoke")) == 4
+    assert not _events(ass, "Title")  # first line at 1 s: no title card
     assert "Style: Karaoke" in ass
 
 
+def test_alternate_layout_waits_in_next_colour():
+    p = _project()
+    ass = build_ass(p, measure=FixedWidth())
+    nxt = _events(ass, "Next")
+    # Line 2 is shown while line 1 is sung, in the "next" colour until line 1 ends.
+    assert any(f",{ass_time(p.lines[0].span()[1])},Next," in e for e in nxt)
+    ys = [re.search(r"\\pos\(960,(\d+)\)", e).group(1) for e in _events(ass, "Karaoke")]
+    assert ys[0] != ys[1] and ys[0] == ys[2]
+
+
+def test_scroll_layout_current_on_top_next_below():
+    from autokaraoke.export.ass import AssStyle
+
+    p = _project()
+    st = AssStyle(layout="scroll", ball=False)
+    ass = build_ass(p, st, measure=FixedWidth())
+    kar = _events(ass, "Karaoke")
+    assert len(kar) == 4 and all(f"\\pos(960,{st.upper_y})" in e for e in kar)
+    nxt = _events(ass, "Next")
+    assert len(nxt) == 3 and all(f"\\pos(960,{st.lower_y})" in e for e in nxt)
+
+
+def test_backing_line_style_and_no_ball():
+    p = _project()
+    p.lines[1].backing = True
+    ass = build_ass(p, measure=FixedWidth())
+    back = _events(ass, "Backing")
+    assert len(back) == 1 and "(Fe" in back[0] and back[0].endswith("sù)")
+    s1, e1 = p.lines[1].span()
+    for ev in _events(ass, "Ball"):
+        t0 = ev.split(",")[1]
+        assert not (ass_time(s1) <= t0 < ass_time(e1))
+
+
+def test_ball_events_follow_syllables():
+    from autokaraoke.export.ass import ball_at, ball_keyframes
+
+    kf = ball_keyframes([100, 200, 300], [1.0, 1.4, 3.0], [1.3, 1.9, 3.5], 40, 0, 0.0)
+    assert [t for t, _, _ in kf] == sorted(t for t, _, _ in kf)
+    for x, t in ((100, 1.0), (200, 1.4), (300, 3.0)):
+        bx, dy = ball_at(kf, t)
+        assert abs(bx - x) < 1e-6 and abs(dy) < 1e-6
+    assert ball_at(kf, 1.2)[1] < -20  # mid-hop, up in the air
+    assert ball_at(kf, 2.0) == (200, 0.0)  # long gap: waits on the syllable
+    ass = build_ass(_project(), measure=FixedWidth())
+    balls = _events(ass, "Ball")
+    assert balls and all("\\move(" in e for e in balls)
+
+
+def test_long_line_is_shrunk_to_fit():
+    p = _project()
+    retext = __import__("autokaraoke.text.edit", fromlist=["retext_line"]).retext_line
+    retext(p.lines[0], "Nel blu dipinto di blu " * 4, "it")
+    ass = build_ass(p, measure=FixedWidth())
+    assert "\\fscx" in _events(ass, "Karaoke")[0]
+
+
+def test_style_colors_and_overrides(tmp_path):
+    from autokaraoke.export.ass import AssStyle, ass_color, project_style, save_default_style
+
+    assert ass_color("#FFC800") == "&H0000C8FF"
+    st = AssStyle.from_dict({"size": "64", "ball": False, "layout": "nope", "unknown": 1})
+    assert st.size == 64 and st.ball is False and st.layout == "alternate"
+    save_default_style(AssStyle(font="DejaVu Sans", size=70))
+    p = _project()
+    p.render = {"size": 90}
+    st = project_style(p)
+    assert st.font == "DejaVu Sans" and st.size == 90
+
+
 def test_countdown_before_first_line_after_pause():
-    ass = build_ass(_project())  # only the reprise at 60 s follows a pause of 5+ s
+    from autokaraoke.export.ass import AssStyle
+
+    ass = build_ass(_project(), AssStyle(ball=False), measure=FixedWidth())  # only the reprise at 60 s follows a pause of 5+ s
     dots = [ln for ln in ass.splitlines() if ",Countdown," in ln and ln.startswith("Dialogue")]
     assert len(dots) == 3 and dots[0].endswith("● ● ●") and "0:00:57.00" in dots[0]
 

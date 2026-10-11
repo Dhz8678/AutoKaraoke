@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 from autokaraoke.audio import probe_duration, require_ffmpeg
-from autokaraoke.export.ass import AssStyle, write_ass
+from autokaraoke.export.ass import AssStyle, project_style, write_ass
+from autokaraoke.mix import karaoke_mix
 from autokaraoke.project import Project
 
 
@@ -14,17 +15,25 @@ def render(
     project: Project,
     output: Path,
     background: Path | None = None,
-    background_color: str = "0x101018",
+    background_color: str | None = None,
     style: AssStyle | None = None,
     fps: int = 30,
 ) -> Path:
     require_ffmpeg()
-    st = style or AssStyle()
+    st = style or project_style(project)
     assert project.path is not None
     ass_path = write_ass(project, project.path / "lyrics.ass", st)
+    if background is None and st.background_image and Path(st.background_image).exists():
+        background = Path(st.background_image)
+    color = background_color or st.background_color
+    if color.startswith("#"):
+        color = "0x" + color[1:]
 
     # (file, track title); the first available one becomes the default track.
+    # With backing lines the default is the instrumental plus those vocals.
+    mix = karaoke_mix(project)
     tracks = [
+        (mix, "Karaoke (with backing vocals)"),
         (project.abspath(project.audio_instrumental), "Instrumental"),
         (project.abspath(project.audio_full), "Original"),
         (project.abspath(project.audio_vocals), "Vocals only"),
@@ -43,7 +52,7 @@ def render(
             f"crop={size.replace('x', ':')},"
         )
     else:
-        cmd += ["-f", "lavfi", "-i", f"color=c={background_color}:s={size}:r={fps}:d={duration:.3f}"]
+        cmd += ["-f", "lavfi", "-i", f"color=c={color}:s={size}:r={fps}:d={duration:.3f}"]
         scale = ""
     for p, _ in tracks:
         cmd += ["-i", str(p.resolve())]
