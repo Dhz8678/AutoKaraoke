@@ -50,7 +50,7 @@ _load_dotenv(CONFIG_DIR / ".env")
 
 
 def openrouter_key() -> str | None:
-    return os.environ.get("OPENROUTER_API_KEY") or os.environ.get("OPENROUTER_KEY") or None
+    return os.environ.get("OPENROUTER_API_KEY") or None
 
 
 OPENROUTER_MODEL = os.environ.get("AUTOKARAOKE_LLM_MODEL", "deepseek/deepseek-v4.1-flash")

@@ -23,31 +23,57 @@ class Player(QObject):
             lambda s: self.stateChanged.emit(s == QMediaPlayer.PlaybackState.PlayingState)
         )
         self._player.durationChanged.connect(lambda ms: self.durationChanged.emit(ms / 1000))
+        self._player.mediaStatusChanged.connect(self._on_status)
         # QMediaPlayer reports position coarsely; interpolate between reports.
         self._last_pos = 0.0
         self._last_wall = time.monotonic()
         self._source: Path | None = None
+        # (position, playing) to restore once a newly set source has loaded: seeking
+        # before that is ignored by QMediaPlayer and playback would restart from 0.
+        self._pending: tuple[float, bool] | None = None
 
     def load(self, path: Path | None, keep_position: bool = True) -> None:
         if path == self._source:
             return
         pos, playing = self.position(), self.is_playing()
+        if self._pending is not None:
+            pos, playing = self._pending
         self._source = path
+        self._pending = None
         self._player.setSource(QUrl.fromLocalFile(str(path)) if path else QUrl())
         if keep_position and path:
-            self.seek(pos)
-            if playing:
-                self._player.play()
+            self._pending = (pos, playing)
+            self._last_pos = pos
+            self._last_wall = time.monotonic()
+            self.stateChanged.emit(playing)
+
+    def _on_status(self, status: QMediaPlayer.MediaStatus) -> None:
+        if status == QMediaPlayer.MediaStatus.InvalidMedia:
+            self._pending = None
+            self.stateChanged.emit(False)
+            return
+        loaded = (QMediaPlayer.MediaStatus.LoadedMedia, QMediaPlayer.MediaStatus.BufferedMedia)
+        if self._pending is None or status not in loaded:
+            return
+        pos, playing = self._pending
+        self._pending = None
+        self.seek(pos)
+        if playing:
+            self.play()
 
     def _on_position(self, ms: int) -> None:
+        if self._pending is not None:
+            return
         self._last_pos = ms / 1000
         self._last_wall = time.monotonic()
 
     def is_playing(self) -> bool:
+        if self._pending is not None:
+            return self._pending[1]
         return self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
 
     def position(self) -> float:
-        if not self.is_playing():
+        if self._pending is not None or not self.is_playing():
             return self._last_pos
         elapsed = (time.monotonic() - self._last_wall) * self._player.playbackRate()
         # Do not extrapolate far if position updates stall.
@@ -55,16 +81,27 @@ class Player(QObject):
 
     def seek(self, seconds: float) -> None:
         seconds = max(0.0, seconds)
-        self._player.setPosition(int(seconds * 1000))
+        if self._pending is not None:
+            self._pending = (seconds, self._pending[1])
+        else:
+            self._player.setPosition(int(seconds * 1000))
         self._last_pos = seconds
         self._last_wall = time.monotonic()
 
     def play(self) -> None:
+        if self._pending is not None:
+            self._pending = (self._pending[0], True)
+            self.stateChanged.emit(True)
+            return
         self._last_wall = time.monotonic()
         self._player.play()
 
     def pause(self) -> None:
         self._last_pos = self.position()
+        if self._pending is not None:
+            self._pending = (self._pending[0], False)
+            self.stateChanged.emit(False)
+            return
         self._player.pause()
 
     def toggle(self) -> None:

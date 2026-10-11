@@ -50,6 +50,16 @@ class Line:
     def syllables(self) -> list[Syllable]:
         return [s for w in self.words for s in w.syllables]
 
+    def span(self) -> tuple[float, float] | None:
+        """(start, end) over the syllables timed at both ends, or None if there are none.
+
+        Lines can be partly timed, e.g. while tap-syncing them syllable by syllable.
+        """
+        timed = [s for s in self.syllables() if s.start is not None and s.end is not None]
+        if not timed:
+            return None
+        return min(s.start for s in timed), max(s.end for s in timed)
+
 
 @dataclass
 class Project:

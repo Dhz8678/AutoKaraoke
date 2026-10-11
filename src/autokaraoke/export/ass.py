@@ -65,10 +65,7 @@ def karaoke_text(line: Line, show_start: float) -> str:
 
 
 def _sung_span(line: Line) -> tuple[float, float] | None:
-    sylls = [s for s in line.syllables() if s.start is not None and s.end is not None]
-    if not sylls:
-        return None
-    return sylls[0].start, sylls[-1].end
+    return line.span()
 
 
 def _countdowns(timed: list, show_start: list[float], st: AssStyle) -> list[str]:

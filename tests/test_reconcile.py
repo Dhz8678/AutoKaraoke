@@ -99,9 +99,8 @@ def test_dotenv(tmp_path, monkeypatch):
     from autokaraoke import config
 
     env = tmp_path / ".env"
-    env.write_text("# comment\nOPENROUTER_KEY='abc'\nexport AK_TEST_OTHER=1\n")
+    env.write_text("# comment\nOPENROUTER_API_KEY='abc'\nexport AK_TEST_OTHER=1\n")
     monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
-    monkeypatch.delenv("OPENROUTER_KEY", raising=False)
     monkeypatch.setenv("AK_TEST_OTHER", "keep")
     config._load_dotenv(env)
     assert config.openrouter_key() == "abc"

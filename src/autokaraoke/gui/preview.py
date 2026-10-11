@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF
+from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QSizePolicy, QWidget
 
@@ -26,12 +26,12 @@ def current_line_index(project: Project, t: float) -> int:
     """Line being sung at ``t``, or the next one to be sung."""
     idx = -1
     for i, line in enumerate(project.lines):
-        sy = line.syllables()
-        if sy and sy[0].start is not None and sy[0].start - 0.3 <= t:
+        span = line.span()
+        if span and span[0] - 0.3 <= t:
             idx = i
     if idx >= 0:
-        sy = project.lines[idx].syllables()
-        if t > sy[-1].end + 0.8 and idx + 1 < len(project.lines):
+        _, end = project.lines[idx].span()
+        if t > end + 0.8 and idx + 1 < len(project.lines):
             return idx + 1
     return max(idx, 0)
 
@@ -77,8 +77,11 @@ class KaraokePreview(QWidget):
             w = fm.horizontalAdvance(text)
             path = QPainterPath()
             path.addText(x, baseline, font, text)
+            # Variable fonts draw glyphs as overlapping contours: with the default odd-even
+            # rule the overlaps (e.g. the bar of "f" and "t") would be left unfilled.
+            path.setFillRule(Qt.FillRule.WindingFill)
             p.setPen(QPen(QColor(0, 0, 0), 3))
-            p.drawPath(path)
+            p.drawPath(path.simplified())
             p.fillPath(path, UNSUNG if active else NEXT)
             if active and start is not None and end is not None and self.t > start:
                 frac = 1.0 if self.t >= end else (self.t - start) / max(end - start, 1e-3)

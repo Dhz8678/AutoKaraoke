@@ -154,7 +154,5 @@ class SettingsDialog(QDialog):
         key = self.key.text().strip()
         model = self.model.text().strip() or "deepseek/deepseek-v4.1-flash"
         save_settings({"OPENROUTER_API_KEY": key, "AUTOKARAOKE_LLM_MODEL": model})
-        if not key:
-            os.environ.pop("OPENROUTER_KEY", None)
         config.OPENROUTER_MODEL = model
         super().accept()

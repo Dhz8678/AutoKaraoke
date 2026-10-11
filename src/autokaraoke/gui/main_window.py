@@ -37,7 +37,7 @@ from autokaraoke.gui.lyrics_panel import LyricsPanel, fmt_time
 from autokaraoke.gui.player import Player
 from autokaraoke.gui.preview import KaraokePreview, current_line_index
 from autokaraoke.gui.timeline import Timeline, compute_peaks
-from autokaraoke.project import Project, Syllable
+from autokaraoke.project import Project
 from autokaraoke.text.edit import retext_line, to_notation
 
 UNDO_LIMIT = 100
@@ -99,8 +99,9 @@ class MainWindow(QMainWindow):
         self.redo_stack: list[list] = []
         self.job: Job | None = None
         self.tap_index = -1
-        self.tap_prev: Syllable | None = None
+        self.tap_prev = -1  # index of the last tapped syllable (Tap mode)
         self.tap_pressed = False
+        self.peaks_cache: dict[str, np.ndarray] = {}
 
         self.player = Player(self)
         self.timeline = Timeline()
@@ -281,10 +282,8 @@ class MainWindow(QMainWindow):
         self.project = proj
         self.dirty = False
         self.tap_mode.setCurrentIndex(0)
-        peaks = None
-        if proj is not None:
-            peaks = self._load_peaks(proj)
-        self.canvas.set_project(proj, peaks)
+        self.peaks_cache.clear()
+        self.canvas.set_project(proj, None)
         self.preview.set_project(proj)
         self.lyrics.set_project(proj)
         self.timeline._sync_scrollbar()
@@ -301,18 +300,20 @@ class MainWindow(QMainWindow):
         self._set_enabled()
         self._update_status()
 
-    def _load_peaks(self, proj: Project) -> np.ndarray | None:
+    def _load_peaks(self, path: str) -> np.ndarray | None:
         import soundfile as sf
 
-        path = proj.abspath(proj.audio_vocals) or proj.abspath(proj.audio_full)
-        if path is None or not path.exists():
-            return None
-        audio, sr = sf.read(str(path), dtype="float32", always_2d=True)
-        return compute_peaks(audio.mean(axis=1), sr)
+        if path not in self.peaks_cache:
+            if not Path(path).exists():
+                return None
+            audio, sr = sf.read(path, dtype="float32", always_2d=True)
+            self.peaks_cache[path] = compute_peaks(audio.mean(axis=1), sr)
+        return self.peaks_cache[path]
 
     def _load_track(self) -> None:
         data = self.track.currentData()
         self.player.load(Path(data) if data else None)
+        self.canvas.set_peaks(self._load_peaks(data) if data else None)
 
     def save(self) -> bool:
         if not self.project:
@@ -484,10 +485,16 @@ class MainWindow(QMainWindow):
         self.push_undo()
         if start:
             s.start = min(t, s.end - MIN_DUR) if s.end is not None else t
-            if i > 0 and self.canvas.sylls[i - 1].end > s.start:
-                self.canvas.sylls[i - 1].end = max(s.start, self.canvas.sylls[i - 1].start + MIN_DUR)
+            if s.end is None:
+                s.end = s.start + 0.3
+            prev = self.canvas.sylls[i - 1] if i > 0 else None
+            if prev is not None and prev.start is not None and prev.end is not None \
+                    and prev.end > s.start:
+                prev.end = max(s.start, prev.start + MIN_DUR)
         else:
-            s.end = max(t, (s.start or t) + MIN_DUR)
+            s.end = max(t, (s.start if s.start is not None else t - 0.3) + MIN_DUR)
+            if s.start is None:
+                s.start = s.end - 0.3
         s.confidence = 1.0
         self._fix_lines()
         self.canvas.update()
@@ -495,9 +502,8 @@ class MainWindow(QMainWindow):
 
     def _fix_lines(self) -> None:
         for line in self.project.lines:
-            sy = line.syllables()
-            if sy and sy[0].start is not None:
-                line.start, line.end = sy[0].start, sy[-1].end
+            if span := line.span():
+                line.start, line.end = span
 
     # ---- tap sync ---------------------------------------------------------
 
@@ -506,14 +512,16 @@ class MainWindow(QMainWindow):
             if self.tap_index >= 0:
                 self.log("Tap sync stopped")
             self.tap_index = -1
-            self.tap_prev = None
+            self.tap_prev = -1
+            self.tap_pressed = False
             self._update_status()
             return
         if not self.project or not self.canvas.sylls:
             self.tap_mode.setCurrentIndex(0)
             return
         self.tap_index = max(self.canvas.selected, 0)
-        self.tap_prev = None
+        self.tap_prev = -1
+        self.tap_pressed = False
         self.push_undo()
         s = self.canvas.sylls[self.tap_index]
         if not self.player.is_playing():
@@ -546,15 +554,15 @@ class MainWindow(QMainWindow):
                 self._tap_advance()
         elif press:  # tap mode
             s = sylls[self.tap_index]
-            prev = self.tap_prev
-            if prev is not None:
-                same_line = self.canvas.syl_line[sylls.index(prev)] == self.canvas.syl_line[self.tap_index]
+            if 0 <= self.tap_prev < len(sylls):
+                prev = sylls[self.tap_prev]
+                same_line = self.canvas.syl_line[self.tap_prev] == self.canvas.syl_line[self.tap_index]
                 old = max((prev.end or prev.start) - prev.start, 0.2)
                 prev.end = t if same_line else min(prev.start + old, t)
                 prev.end = max(prev.end, prev.start + MIN_DUR)
             old_dur = (s.end - s.start) if s.end is not None and s.start is not None else 0.3
             s.start, s.end, s.confidence = t, t + max(old_dur, MIN_DUR), 1.0
-            self.tap_prev = s
+            self.tap_prev = self.tap_index
             self._tap_advance()
         self._fix_lines()
         self.canvas.update()

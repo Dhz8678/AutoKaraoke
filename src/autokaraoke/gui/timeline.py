@@ -101,9 +101,13 @@ class TimelineCanvas(QWidget):
 
     def set_project(self, project: Project | None, peaks: np.ndarray | None) -> None:
         self.project = project
-        self.peaks = peaks if peaks is not None else np.zeros(0, np.float32)
         self.duration = project.duration if project else 0.0
+        self.set_peaks(peaks)
         self.refresh()
+
+    def set_peaks(self, peaks: np.ndarray | None) -> None:
+        self.peaks = peaks if peaks is not None else np.zeros(0, np.float32)
+        self.update()
 
     def refresh(self) -> None:
         self.sylls, self.syl_line = [], []
@@ -216,10 +220,10 @@ class TimelineCanvas(QWidget):
         f.setPointSizeF(8)
         p.setFont(f)
         for li, line in enumerate(self.project.lines):
-            sy = line.syllables()
-            if not sy or sy[0].start is None:
+            span = line.span()
+            if span is None:
                 continue
-            x0, x1 = self.x_of(sy[0].start), self.x_of(sy[-1].end)
+            x0, x1 = self.x_of(span[0]), self.x_of(span[1])
             if x1 < 0 or x0 > self.width():
                 continue
             r = QRectF(x0, top, max(x1 - x0, 2), LINE_H - 4)
@@ -275,8 +279,13 @@ class TimelineCanvas(QWidget):
         return best
 
     def _neighbours(self, i: int) -> tuple[Syllable | None, Syllable | None]:
+        """Adjacent syllables, ignoring those not timed yet."""
         prev = self.sylls[i - 1] if i > 0 else None
         nxt = self.sylls[i + 1] if i + 1 < len(self.sylls) else None
+        if prev is not None and (prev.start is None or prev.end is None):
+            prev = None
+        if nxt is not None and (nxt.start is None or nxt.end is None):
+            nxt = None
         return prev, nxt
 
     def mousePressEvent(self, e: QMouseEvent) -> None:
@@ -357,8 +366,8 @@ class TimelineCanvas(QWidget):
     def _sync_line_bounds(self, index: int) -> None:
         for li in {self.syl_line[j] for j in (index - 1, index, index + 1) if 0 <= j < len(self.sylls)}:
             line: Line = self.project.lines[li]
-            sy = line.syllables()
-            line.start, line.end = sy[0].start, sy[-1].end
+            if span := line.span():
+                line.start, line.end = span
 
 
 class Timeline(QWidget):
