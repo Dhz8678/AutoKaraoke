@@ -1,0 +1,75 @@
+name: Sync upstream
+
+on:
+  schedule:
+    # Daily at 02:00 UTC (10:00 Beijing time)
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: sync-upstream
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Fetch upstream and synchronize
+        id: sync
+        env:
+          UPSTREAM_REPOSITORY: GiacoBot/AutoKaraoke
+        run: |
+          set -euo pipefail
+
+          git remote add upstream "https://github.com/${UPSTREAM_REPOSITORY}.git"
+          git fetch upstream main --tags
+
+          upstream_sha="$(git rev-parse refs/remotes/upstream/main)"
+          fork_sha="$(git rev-parse refs/remotes/origin/main)"
+
+          # If the fork is only behind upstream, update main automatically.
+          # If main has fork-specific commits, or branch protection blocks the
+          # fast-forward, publish a dedicated upstream branch and open a PR.
+          if git merge-base --is-ancestor "$fork_sha" "$upstream_sha"; then
+            if git push origin "$upstream_sha:refs/heads/main"; then
+              echo "result=updated" >> "$GITHUB_OUTPUT"
+            else
+              echo "Fast-forward push was blocked; falling back to a pull request."
+              git push --force origin "$upstream_sha:refs/heads/upstream-sync"
+              echo "result=pr" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git push --force origin "$upstream_sha:refs/heads/upstream-sync"
+            echo "result=pr" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Copy newly published upstream tags without force-overwriting tags.
+          git push origin --tags || echo "Some tags already exist or could not be pushed; existing tags were left unchanged."
+
+      - name: Create or reuse upstream pull request
+        if: steps.sync.outputs.result == 'pr'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          pr_number="$(gh pr list --head "${GITHUB_REPOSITORY_OWNER}:upstream-sync" --base main --state open --json number --jq '.[0].number // empty')"
+
+          if [ -z "$pr_number" ]; then
+            gh pr create \
+              --base main \
+              --head upstream-sync \
+              --title "Sync upstream: GiacoBot/AutoKaraoke" \
+              --body "This pull request contains the latest commits from https://github.com/GiacoBot/AutoKaraoke. Review and merge to update this fork. The sync branch is maintained automatically."
+          else
+            echo "Reusing existing upstream sync pull request #$pr_number."
+          fi
