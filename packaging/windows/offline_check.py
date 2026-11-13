@@ -16,6 +16,8 @@ def main():
     parser.add_argument("--report", type=Path, required=True)
     parser.add_argument("--inference", choices=("align", "mms", "asr", "separation"))
     options = parser.parse_args()
+    if options.inference == "separation":
+        os.environ["CUDA_VISIBLE_DEVICES"] = "-1"  # Do not compete with an open editor for GPU memory.
     started = time.monotonic()
     root = Path(os.environ["AUTOKARAOKE_OFFLINE_ROOT"])
     output = Path(tempfile.mkdtemp(prefix="autokaraoke-offline-check-", dir=options.report.parent))
@@ -52,10 +54,13 @@ def main():
                 assert path.is_relative_to(root), "Using a model from the user's cache"
                 assert path.stat().st_size == file["bytes"]
             result["models"].append(model["id"])
+        from PySide6.QtCore import QSettings
         from PySide6.QtWidgets import QApplication
         from autokaraoke.gui.app import install_chinese_translation
         from autokaraoke.gui.main_window import MainWindow
         app = QApplication([])
+        QSettings.setDefaultFormat(QSettings.Format.IniFormat)
+        QSettings.setPath(QSettings.Format.IniFormat, QSettings.Scope.UserScope, str(output / "qt-settings"))
         install_chinese_translation(app)
         window = MainWindow()
         window.show()

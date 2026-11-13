@@ -125,7 +125,7 @@ def main():
             relative = Path("huggingface/hub") / ("models--" + model["id"].replace("/", "--"))
             model_root = stage / "models" / relative
             snapshot_root = model_root / "snapshots" / model["revision"]
-            snapshot_root.mkdir(parents=True)
+            snapshot_root.mkdir(parents=True, exist_ok=True)
             for record in model["files"]:
                 source = options.models / relative / "snapshots" / model["revision"] / record["name"]
                 if source.stat().st_size != record["bytes"] or digest(source) != record["sha256"]:
@@ -133,12 +133,12 @@ def main():
                 destination = snapshot_root / record["name"]
                 destination.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(source, destination)
-            (model_root / "refs").mkdir()
+            (model_root / "refs").mkdir(exist_ok=True)
             (model_root / "refs/main").write_text(model["revision"], encoding="ascii")
         shutil.copy2(options.models / "model-manifest.json", stage / "models/model-manifest.json")
         copy_tree(options.models / "licenses", licenses / "models")
         separation = stage / "models/separation"
-        separation.mkdir()
+        separation.mkdir(exist_ok=True)
         for name in ("vocals_mel_band_roformer.ckpt", "vocals_mel_band_roformer.yaml", "download_checks.json"):
             shutil.copy2(options.separation_models / name, separation / name)
         shutil.copy2(snapshot / "packaging/windows/offline_check.py", stage / "app/offline_check.py")
@@ -190,10 +190,10 @@ CUDA 版 PyTorch 可使用受支持的 NVIDIA 显卡，或退回 CPU；CPU 较�
             "edition": "offline", "files": records}, ensure_ascii=False, indent=2), encoding="utf-8")
         # Preserve the original BAT-based download-on-demand edition as a separate ZIP.
         online = output / f"AutoKaraoke-{options.label}-windows-x64-online"
-        online.mkdir()
+        online.mkdir(exist_ok=True)
         stage_app(snapshot, online / "app")
         copy_tree(snapshot / "docs", online / "app/docs")
-        (online / "bin").mkdir()
+        (online / "bin").mkdir(exist_ok=True)
         for name in ("uv.exe", "ffmpeg.exe", "ffprobe.exe"):
             shutil.copy2(options.existing_release / "bin" / name, online / "bin" / name)
         copy_tree(licenses, online / "licenses")
@@ -201,7 +201,7 @@ CUDA 版 PyTorch 可使用受支持的 NVIDIA 显卡，或退回 CPU；CPU 较�
         for name in ("AutoKaraoke.bat", "README.txt"):
             shutil.copy2(snapshot / "packaging/windows" / name, online / name)
         shutil.copy2(snapshot / "docs/中文增强版说明.md", online / "中文增强版说明.md")
-        (online / "images").mkdir()
+        (online / "images").mkdir(exist_ok=True)
         shutil.copy2(snapshot / "docs/images/zh-render-typography.png", online / "images/zh-render-typography.png")
         print("Compressing the BAT online edition...", flush=True)
         with zipfile.ZipFile(assets / (online.name + ".zip"), "w", zipfile.ZIP_DEFLATED, compresslevel=6) as archive_out:
