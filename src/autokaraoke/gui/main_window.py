@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
     QSlider,
     QSpinBox,
     QSplitter,
+    QStyle,
     QToolBar,
     QToolButton,
     QVBoxLayout,
@@ -35,6 +36,7 @@ from PySide6.QtWidgets import (
 
 from autokaraoke import components, config, steps
 from autokaraoke.gui.dialogs import HelpDialog, LineEditDialog, ProposalDialog, SettingsDialog
+from autokaraoke.gui.download_progress import DownloadProgress
 from autokaraoke.gui.jobs import Job
 from autokaraoke.gui.lyrics_panel import LyricsPanel, fmt_time
 from autokaraoke.gui.player import Player
@@ -53,30 +55,30 @@ NUDGE = 0.01
 class NewProjectDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("New karaoke project")
+        self.setWindowTitle('新建卡拉 OK 项目')
         form = QFormLayout(self)
         row = QHBoxLayout()
         self.source = QLineEdit()
-        placeholder = "Audio file"
+        placeholder = '音频文件'
         if config.download_enabled():
-            placeholder += " or YouTube / YT Music URL"
+            placeholder += '或 YouTube / YT Music 链接'
         self.source.setPlaceholderText(placeholder)
-        browse = QPushButton("Browse…")
+        browse = QPushButton('浏览…')
         browse.clicked.connect(self._browse)
         row.addWidget(self.source)
         row.addWidget(browse)
-        form.addRow("Source", row)
+        form.addRow('音频来源', row)
         self.artist = QLineEdit()
         self.title = QLineEdit()
         self.lang = QLineEdit()
-        self.artist.setPlaceholderText("guessed from the file name (Artist - Title)")
-        self.title.setPlaceholderText("guessed from the file name (Artist - Title)")
-        self.lang.setPlaceholderText("auto (e.g. it, en, es)")
-        form.addRow("Artist", self.artist)
-        form.addRow("Title", self.title)
-        form.addRow("Language", self.lang)
+        self.artist.setPlaceholderText('根据文件名推测（歌手 - 歌名）')
+        self.title.setPlaceholderText('根据文件名推测（歌手 - 歌名）')
+        self.lang.setPlaceholderText('自动识别（例如 zh、en、ja）')
+        form.addRow('歌手', self.artist)
+        form.addRow('歌名', self.title)
+        form.addRow('语言', self.lang)
         self.out = QLineEdit(str(config.PROJECTS_DIR.resolve()))
-        form.addRow("Projects folder", self.out)
+        form.addRow('项目保存目录', self.out)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
@@ -85,7 +87,7 @@ class NewProjectDialog(QDialog):
 
     def _browse(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Choose audio", "", "Audio (*.mp3 *.flac *.wav *.m4a *.ogg *.opus *.aac *.mp4 *.mkv)"
+            self, '选择音频', "", '音频及视频 (*.mp3 *.flac *.wav *.m4a *.ogg *.opus *.aac *.mp4 *.mkv)'
         )
         if path:
             self.source.setText(path)
@@ -156,42 +158,42 @@ class MainWindow(QMainWindow):
         return a
 
     def _build_actions(self) -> None:
-        self.act_new = self._action("New…", self.new_project, "Ctrl+N", "Create a project from an audio file")
-        self.act_open = self._action("Open…", self.open_dialog, "Ctrl+O")
-        self.act_save = self._action("Save", self.save, "Ctrl+S")
-        self.act_undo = self._action("Undo", self.undo, "Ctrl+Z")
-        self.act_redo = self._action("Redo", self.redo, "Ctrl+Shift+Z")
-        self.act_lyrics = self._action("Lyrics", self.fetch_lyrics,
-                                       tip="Fetch lyrics from LRCLIB or load a .lrc/.txt file")
-        self.act_fix = self._action("Fix lyrics (experimental)…", self.fix_lyrics,
-                                    tip="Experimental: compare the lyrics with what is sung (speech "
-                                        "recognition + LLM). Enable it in File → Settings")
+        self.act_new = self._action('新建…', self.new_project, "Ctrl+N", '从音频文件创建项目')
+        self.act_open = self._action('打开…', self.open_dialog, "Ctrl+O")
+        self.act_save = self._action('保存', self.save, "Ctrl+S")
+        self.act_undo = self._action('撤销', self.undo, "Ctrl+Z")
+        self.act_redo = self._action('重做', self.redo, "Ctrl+Shift+Z")
+        self.act_lyrics = self._action('歌词', self.fetch_lyrics,
+                                       tip='从 LRCLIB 获取歌词或导入 .lrc/.txt 文件')
+        self.act_fix = self._action('修正歌词（实验性）…', self.fix_lyrics,
+                                    tip='实验性功能：通过语音识别和大语言模型比对演唱与歌词，可在“文件 → 设置”中启用')
         self.act_fix.setVisible(config.experimental_llm())
-        self.act_settings = self._action("Settings…", self.show_settings)
-        self.act_separate = self._action("Separate", self.separate, tip="Split vocals / instrumental")
-        self.act_align = self._action("Auto-sync", self.align, tip="Automatic syllable alignment")
-        self.act_render = self._action("Render video…", self.render, "Ctrl+R")
-        self.act_export = self._action("Export lyrics…", self.export, "Ctrl+E",
-                                       "Save the synced lyrics as ASS subtitles or enhanced LRC "
-                                       "(no video: use Render video for that)")
+        self.act_settings = self._action('设置…', self.show_settings)
+        self.act_separate = self._action('分离人声', self.separate, tip='分离人声与伴奏')
+        self.act_align = self._action('自动对齐', self.align, tip='自动对齐歌词音节时间')
+        self.act_render = self._action('生成视频…', self.render, "Ctrl+R")
+        self.act_export = self._action('导出歌词…', self.export, "Ctrl+E",
+                                       '将已对齐的歌词保存为 ASS 字幕或增强 LRC；生成视频请使用“生成视频”')
 
         # Line actions work on the lines selected in the lyrics list (shortcuts active there).
-        self.act_line_edit = self._action("Edit line…", lambda: self.edit_line(self.lyrics.currentRow()),
-                                          "Return", "Edit text and syllables; new lines split the line")
-        self.act_line_insert = self._action("Insert line below…", self.insert_line, "Insert")
-        self.act_line_delete = self._action("Delete lines", self.delete_lines, "Delete")
-        self.act_line_merge = self._action("Merge with next line", self.merge_lines, "Ctrl+J",
-                                           "Join the selected lines (or the line and the next one)")
+        self.act_line_edit = self._action('编辑歌词行…', lambda: self.edit_line(self.lyrics.currentRow()),
+                                          "Return", '编辑歌词和音节，换行可拆分歌词行')
+        self.act_line_insert = self._action('在下方插入歌词行…', self.insert_line, "Insert")
+        self.act_line_delete = self._action('删除歌词行', self.delete_lines, "Delete")
+        self.act_line_merge = self._action('与下一行合并', self.merge_lines, "Ctrl+J",
+                                           '合并选中的歌词行，或将当前行与下一行合并')
         self.act_line_backing = self._action(
-            "Backing vocals on/off", self.toggle_backing, "B",
-            "Backing lines (choir, yodel…) stay in the karaoke audio and are shown as backing")
+            '设为和声／取消和声', self.toggle_backing, "B",
+            '和声保留在卡拉 OK 音轨中，并在视频中以和声样式显示')
+        self.act_simplify = self._action('转为简体中文', self.simplify_lyrics,
+                                          tip='转换当前歌词字形，保留时间信息并修正中文语言识别')
         self.line_actions = [self.act_line_edit, self.act_line_insert, self.act_line_delete,
-                             self.act_line_merge, self.act_line_backing]
+                             self.act_line_merge, self.act_line_backing, self.act_simplify]
         for a in self.line_actions:
             a.setShortcutContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             self.lyrics.addAction(a)
 
-        tb = self.addToolBar("Main")
+        tb = self.addToolBar('主工具栏')
         tb.setMovable(False)
         for a in (self.act_new, self.act_open, self.act_save):
             tb.addAction(a)
@@ -199,10 +201,10 @@ class MainWindow(QMainWindow):
         for a in (self.act_lyrics, self.act_separate, self.act_fix, self.act_align):
             tb.addAction(a)
         self.engine = QComboBox()
-        self.engine.addItem("Qwen + MMS check", "qwen")
-        self.engine.addItem("MMS (any language)", "mms")
-        self.engine.addItem("Even spread (LRC lines)", "naive")
-        self.engine.setToolTip("Alignment engine for Auto-sync")
+        self.engine.addItem('Qwen + MMS 交叉校验', "qwen")
+        self.engine.addItem('MMS（多语言）', "mms")
+        self.engine.addItem('均匀分配（LRC 歌词行）', "naive")
+        self.engine.setToolTip('自动对齐使用的引擎')
         tb.addWidget(self.engine)
         tb.addSeparator()
         for a in (self.act_render, self.act_export):
@@ -211,19 +213,19 @@ class MainWindow(QMainWindow):
         tb.addAction(self.act_undo)
         tb.addAction(self.act_redo)
 
-        file_menu = self.menuBar().addMenu("&File")
+        file_menu = self.menuBar().addMenu('文件(&F)')
         for a in (self.act_new, self.act_open, self.act_save, self.act_export, self.act_render):
             file_menu.addAction(a)
         file_menu.addSeparator()
         file_menu.addAction(self.act_settings)
-        edit_menu = self.menuBar().addMenu("&Edit")
+        edit_menu = self.menuBar().addMenu('编辑(&E)')
         edit_menu.addAction(self.act_undo)
         edit_menu.addAction(self.act_redo)
-        lines_menu = self.menuBar().addMenu("&Lines")
+        lines_menu = self.menuBar().addMenu('歌词行(&L)')
         for a in self.line_actions:
             lines_menu.addAction(a)
-        help_menu = self.menuBar().addMenu("&Help")
-        help_menu.addAction(self._action("Keyboard shortcuts", self.show_help, "F1"))
+        help_menu = self.menuBar().addMenu('帮助(&H)')
+        help_menu.addAction(self._action('快捷键与使用帮助', self.show_help, "F1"))
 
     def _build_layout(self) -> None:
         # Row 1: playback.
@@ -231,8 +233,9 @@ class MainWindow(QMainWindow):
         h = QHBoxLayout(transport)
         h.setContentsMargins(6, 2, 6, 0)
         self.btn_play = QToolButton()
-        self.btn_play.setText("▶")
-        self.btn_play.setToolTip("Play / pause (Space)")
+        self.btn_play.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.btn_play.setAccessibleName("播放／暂停")
+        self.btn_play.setToolTip('播放／暂停（空格）')
         self.time_label = QLabel("00:00.00")
         self.time_label.setMinimumWidth(80)
         self.speed = QSlider(Qt.Orientation.Horizontal)
@@ -240,29 +243,28 @@ class MainWindow(QMainWindow):
         self.speed.setValue(20)
         self.speed.setPageStep(1)
         self.speed.setFixedWidth(140)
-        self.speed.setToolTip("Playback speed, 25–150 % (pitch is preserved)")
+        self.speed.setToolTip('播放速度为 25%～150%，保持音高不变')
         self.speed_label = QToolButton()
         self.speed_label.setText("100%")
-        self.speed_label.setToolTip("Reset to 100 %")
+        self.speed_label.setToolTip('恢复为 100%')
         self.speed_label.setMinimumWidth(48)
         self.track = QComboBox()
-        self.track.setToolTip("Audio to play and to show in the timeline")
+        self.track.setToolTip('选择播放及时间轴显示的音轨')
         self.view = QComboBox()
-        self.view.addItem("Waveform", "wave")
-        self.view.addItem("Spectrogram", "spec")
-        self.view.addItem("Spectrogram + wave", "both")
-        self.view.setToolTip("Timeline display. In the spectrogram, consonants (t, k, s, p…) show as "
-                             "bright vertical streaks: good syllable starts")
+        self.view.addItem('波形', "wave")
+        self.view.addItem('频谱图', "spec")
+        self.view.addItem('频谱图 + 波形', "both")
+        self.view.setToolTip('选择时间轴显示方式。频谱图中的明亮竖线通常对应辅音起点，可辅助定位音节')
         zoom_in, zoom_out = QToolButton(), QToolButton()
         zoom_in.setText("+")
         zoom_out.setText("−")
         zoom_in.clicked.connect(lambda: self.canvas.zoom(1.4))
         zoom_out.clicked.connect(lambda: self.canvas.zoom(1 / 1.4))
-        for wdg in (self.btn_play, self.time_label, QLabel("Speed"), self.speed, self.speed_label,
-                    QLabel("Audio"), self.track, QLabel("View"), self.view):
+        for wdg in (self.btn_play, self.time_label, QLabel('速度'), self.speed, self.speed_label,
+                    QLabel('音轨'), self.track, QLabel('视图'), self.view):
             h.addWidget(wdg)
         h.addStretch()
-        h.addWidget(QLabel("Zoom"))
+        h.addWidget(QLabel('缩放'))
         h.addWidget(zoom_out)
         h.addWidget(zoom_in)
 
@@ -270,49 +272,55 @@ class MainWindow(QMainWindow):
         inspector = QWidget()
         h = QHBoxLayout(inspector)
         h.setContentsMargins(6, 0, 6, 2)
-        self.syl_label = QLabel("No syllable selected")
+        self.syl_label = QLabel('未选择音节')
         self.syl_label.setMinimumWidth(200)
         self.syl_start = QDoubleSpinBox()
         self.syl_end = QDoubleSpinBox()
-        for spin, tip in ((self.syl_start, "Start of the selected syllable (s)"),
-                          (self.syl_end, "End of the selected syllable (s)")):
+        for spin, tip in ((self.syl_start, '所选音节的开始时间（秒）'),
+                          (self.syl_end, '所选音节的结束时间（秒）')):
             spin.setDecimals(2)
             spin.setSingleStep(0.01)
             spin.setRange(0, 24 * 3600)
             spin.setKeyboardTracking(False)
-            spin.setToolTip(tip + "; arrows step 10 ms")
+            spin.setToolTip(tip + '；方向键每次调整 10 毫秒')
         self.btn_set_start = QToolButton()
-        self.btn_set_start.setText("[ Start here")
-        self.btn_set_start.setToolTip("Set the start at the playhead ([)")
+        self.btn_set_start.setText('[ 设为开始')
+        self.btn_set_start.setToolTip('将播放头位置设为开始时间（[）')
         self.btn_set_end = QToolButton()
-        self.btn_set_end.setText("End here ]")
-        self.btn_set_end.setToolTip("Set the end at the playhead (])")
+        self.btn_set_end.setText('设为结束 ]')
+        self.btn_set_end.setToolTip('将播放头位置设为结束时间（]）')
         self.btn_play_syl = QToolButton()
-        self.btn_play_syl.setText("▶ Syllable")
-        self.btn_play_syl.setToolTip("Play the selected syllable (P)")
+        self.btn_play_syl.setText('音节')
+        self.btn_play_syl.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.btn_play_syl.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.btn_play_syl.setToolTip('播放所选音节（P）')
         self.btn_play_line = QToolButton()
-        self.btn_play_line.setText("▶ Line")
-        self.btn_play_line.setToolTip("Play the line of the selected syllable")
+        self.btn_play_line.setText('歌词行')
+        self.btn_play_line.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.btn_play_line.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.btn_play_line.setToolTip('播放所选音节所在的歌词行')
         self.btn_loop = QToolButton()
-        self.btn_loop.setText("⟲ Loop line")
+        self.btn_loop.setText('循环本行')
+        self.btn_loop.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_BrowserReload))
+        self.btn_loop.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
         self.btn_loop.setCheckable(True)
-        self.btn_loop.setToolTip("Repeat the line of the selected syllable (L)")
+        self.btn_loop.setToolTip('循环播放所选音节所在的歌词行（L）')
         self.tap_mode = QComboBox()
-        self.tap_mode.addItem("Off", "")
-        self.tap_mode.addItem("Hold: press=start, release=end", "hold")
-        self.tap_mode.addItem("Tap: each tap starts a syllable", "tap")
-        self.tap_mode.setToolTip("Tap sync with the Space bar, starting from the selected syllable")
+        self.tap_mode.addItem('关闭', "")
+        self.tap_mode.addItem('按住模式：按下开始，松开结束', "hold")
+        self.tap_mode.addItem('点按模式：每次按下开始一个音节', "tap")
+        self.tap_mode.setToolTip('从所选音节开始，使用空格键打拍对齐')
         self.latency = QSpinBox()
         self.latency.setRange(-300, 500)
         self.latency.setSuffix(" ms")
         self.latency.setValue(60)
-        self.latency.setToolTip("Reaction-time compensation subtracted from taps")
-        for wdg in (self.syl_label, QLabel("Start"), self.syl_start, QLabel("End"), self.syl_end,
+        self.latency.setToolTip('打拍时扣除的反应延迟补偿')
+        for wdg in (self.syl_label, QLabel('开始'), self.syl_start, QLabel('结束'), self.syl_end,
                     self.btn_set_start, self.btn_set_end, self.btn_play_syl, self.btn_play_line,
                     self.btn_loop):
             h.addWidget(wdg)
         h.addStretch()
-        for wdg in (QLabel("Tap sync"), self.tap_mode, self.latency):
+        for wdg in (QLabel('打拍对齐'), self.tap_mode, self.latency):
             h.addWidget(wdg)
 
         self.hint = QLabel()
@@ -333,7 +341,14 @@ class MainWindow(QMainWindow):
         self.top_split.addWidget(lyrics_box)
         self.right_split = QSplitter(Qt.Orientation.Vertical)
         self.right_split.addWidget(self.preview)
-        self.right_split.addWidget(self.log_view)
+        log_box = QWidget()
+        log_layout = QVBoxLayout(log_box)
+        log_layout.setContentsMargins(0, 0, 0, 0)
+        self.download_progress = DownloadProgress()
+        self.download_progress.cancelRequested.connect(self._cancel_job)
+        log_layout.addWidget(self.download_progress)
+        log_layout.addWidget(self.log_view, 1)
+        self.right_split.addWidget(log_box)
         self.right_split.setSizes([260, 100])
         self.top_split.addWidget(self.right_split)
         self.top_split.setSizes([460, 700])
@@ -357,7 +372,8 @@ class MainWindow(QMainWindow):
 
     def _connect(self) -> None:
         self.btn_play.clicked.connect(self.player.toggle)
-        self.player.stateChanged.connect(lambda playing: self.btn_play.setText("⏸" if playing else "▶"))
+        self.player.stateChanged.connect(lambda playing: self.btn_play.setIcon(self.style().standardIcon(
+            QStyle.StandardPixmap.SP_MediaPause if playing else QStyle.StandardPixmap.SP_MediaPlay)))
         self.speed.valueChanged.connect(self._speed_changed)
         self.speed_label.clicked.connect(lambda: self.speed.setValue(20))
         self.track.currentIndexChanged.connect(self._load_track)
@@ -409,7 +425,7 @@ class MainWindow(QMainWindow):
         if not self._maybe_save():
             return
         path, _ = QFileDialog.getOpenFileName(
-            self, "Open project", str(config.PROJECTS_DIR), "AutoKaraoke project (*.akp.json)"
+            self, '打开项目', str(config.PROJECTS_DIR), 'AutoKaraoke 项目 (*.akp.json)'
         )
         if path:
             self.open_project(Path(path))
@@ -418,13 +434,34 @@ class MainWindow(QMainWindow):
         try:
             proj = Project.load(path)
         except Exception as e:
-            QMessageBox.critical(self, "Open failed", str(e))
+            QMessageBox.critical(self, '打开失败', str(e))
             return
         self.player.reset()  # another song: start from the beginning, paused
         self._set_project(proj)
         self.undo_stack.clear()
         self.redo_stack.clear()
-        self.log(f"Opened {proj.path}")
+        self.log(f'已打开：{proj.path}')
+        if config.simplified_chinese_lyrics():
+            self.simplify_lyrics()
+
+    def simplify_lyrics(self) -> None:
+        if not self.project or (self.job and self.job.isRunning()):
+            return
+        from autokaraoke.text.chinese import backup_lyrics_project, script_language, simplify_project, to_simplified
+
+        project = self.project
+        text = "\n".join(line.text for line in project.lines)
+        if script_language(text) != "zh":
+            return
+        if to_simplified(text) == text and project.language == "zh":
+            return
+        backup = backup_lyrics_project(project)
+        self.push_undo()
+        count = simplify_project(project)
+        self._after_edit()
+        self.log(f"已转换 {count} 行简体歌词，语言设为中文（zh），原有时间信息已保留。")
+        if backup:
+            self.log(f"转换前的项目备份：{backup}")
 
     def _set_project(self, proj: Project | None) -> None:
         self.project = proj
@@ -452,12 +489,12 @@ class MainWindow(QMainWindow):
         self.track.blockSignals(True)
         self.track.clear()
         if proj:
-            for label, rel in (("Original", proj.audio_full), ("Vocals", proj.audio_vocals),
-                               ("Instrumental", proj.audio_instrumental)):
+            for label, rel in (('原曲', proj.audio_full), ('人声', proj.audio_vocals),
+                               ('伴奏', proj.audio_instrumental)):
                 if rel and (proj.path / rel).exists():
                     self.track.addItem(label, str(proj.path / rel))
             if proj.audio_vocals and proj.audio_instrumental and any(ln.backing for ln in proj.lines):
-                self.track.addItem("Karaoke (instrumental + backing)", MIX_TRACK)
+                self.track.addItem('卡拉 OK（伴奏 + 和声）', MIX_TRACK)
         idx = self.track.findData(current) if current is not None else -1
         self.track.setCurrentIndex(max(idx, 0))
         self.track.blockSignals(False)
@@ -473,7 +510,7 @@ class MainWindow(QMainWindow):
 
         job = Job(path, lambda log: load_analysis(path), self)
         job.succeeded.connect(lambda a, p=path: self._analysis_ready(p, a))
-        job.failed.connect(lambda err: self.log(f"Audio analysis failed: {err}"))
+        job.failed.connect(lambda err: self.log(f'音频分析失败：{err}'))
         job.finished.connect(lambda j=job: self.bg_jobs.discard(j))
         self.bg_jobs.add(job)
         job.start()
@@ -530,7 +567,7 @@ class MainWindow(QMainWindow):
 
         job = Job("mix", lambda log: karaoke_mix(proj), self)
         job.succeeded.connect(done)
-        job.failed.connect(lambda err: self.log(f"Karaoke mix failed: {err}"))
+        job.failed.connect(lambda err: self.log(f'卡拉 OK 混音失败：{err}'))
         job.finished.connect(lambda j=job: self.bg_jobs.discard(j))
         self.bg_jobs.add(job)
         job.start()
@@ -541,14 +578,14 @@ class MainWindow(QMainWindow):
         self.project.save()
         self.dirty = False
         self._update_title()
-        self.log("Saved")
+        self.log('已保存')
         return True
 
     def _maybe_save(self) -> bool:
         if not self.dirty:
             return True
         r = QMessageBox.question(
-            self, "Unsaved changes", "Save changes to the current project?",
+            self, '有未保存的修改', '是否保存当前项目的修改？',
             QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard
             | QMessageBox.StandardButton.Cancel,
         )
@@ -560,7 +597,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, e) -> None:
         if self.job and self.job.isRunning():
-            QMessageBox.information(self, "Busy", "Wait for the current task to finish.")
+            QMessageBox.information(self, '任务进行中', '请等待当前任务完成。')
             e.ignore()
             return
         if not self._maybe_save():
@@ -572,7 +609,7 @@ class MainWindow(QMainWindow):
         e.accept()
 
     def _update_title(self) -> None:
-        name = f"{self.project.artist} - {self.project.title}" if self.project else "No project"
+        name = f"{self.project.artist} - {self.project.title}" if self.project else '未打开项目'
         self.setWindowTitle(f"{'*' if self.dirty else ''}{name} - AutoKaraoke")
 
     def _set_enabled(self) -> None:
@@ -698,11 +735,11 @@ class MainWindow(QMainWindow):
                   self.btn_play_syl, self.btn_play_line, self.btn_loop):
             w.setEnabled(ok)
         if not ok:
-            self.syl_label.setText("No syllable selected")
+            self.syl_label.setText('未选择音节')
             return
         s = self.canvas.sylls[i]
         line = self.canvas.syl_line[i]
-        self.syl_label.setText(f"Syllable “{s.text}” · line {line + 1}")
+        self.syl_label.setText(f'音节“{s.text}” · 第 {line + 1}')
         for spin, value in ((self.syl_start, s.start), (self.syl_end, s.end)):
             spin.blockSignals(True)
             spin.setValue(value if value is not None else 0.0)
@@ -752,9 +789,9 @@ class MainWindow(QMainWindow):
         if not self.project:
             return
         flagged = sum(1 for s in self.canvas.sylls if s.confidence < 0.5)
-        msg = f"{len(self.project.lines)} lines · {len(self.canvas.sylls)} syllables · {flagged} to review"
+        msg = f'{len(self.project.lines)} 行歌词 · {len(self.canvas.sylls)} 个音节 · {flagged} 个待复核'
         if self.tap_mode.currentData() and 0 <= self.tap_index < len(self.canvas.sylls):
-            msg += f" · TAP next: “{self.canvas.sylls[self.tap_index].text}” (Space)"
+            msg += f' · 下一个打拍音节：“{self.canvas.sylls[self.tap_index].text}”（空格）'
         self.statusBar().showMessage(msg)
 
     # ---- keyboard ---------------------------------------------------------
@@ -844,17 +881,17 @@ class MainWindow(QMainWindow):
         word = self.project.lines[li].words[wi]
         s = self.canvas.sylls[i]
         menu = QMenu(self)
-        menu.addAction("Start at playhead  [", lambda: self._set_boundary_at_playhead(True))
-        menu.addAction("End at playhead  ]", lambda: self._set_boundary_at_playhead(False))
-        menu.addAction("Play syllable  P", self.play_syllable)
+        menu.addAction('在播放头位置设置开始时间  [', lambda: self._set_boundary_at_playhead(True))
+        menu.addAction('在播放头位置设置结束时间  ]', lambda: self._set_boundary_at_playhead(False))
+        menu.addAction('播放音节  P', self.play_syllable)
         menu.addSeparator()
-        split = menu.addAction("Split syllable…", lambda: self.split_syllable(i))
+        split = menu.addAction('拆分音节…', lambda: self.split_syllable(i))
         split.setEnabled(len(s.text) > 1)
-        merge = menu.addAction("Merge with next syllable", lambda: self.merge_syllable(i))
+        merge = menu.addAction('与下一个音节合并', lambda: self.merge_syllable(i))
         merge.setEnabled(si + 1 < len(word.syllables))
         menu.addSeparator()
-        menu.addAction("Edit line…", lambda: self.edit_line(li))
-        backing = menu.addAction("Backing vocals", lambda: self._set_backing([li], not self.project.lines[li].backing))
+        menu.addAction('编辑歌词行…', lambda: self.edit_line(li))
+        backing = menu.addAction('和声', lambda: self._set_backing([li], not self.project.lines[li].backing))
         backing.setCheckable(True)
         backing.setChecked(self.project.lines[li].backing)
         menu.exec(pos)
@@ -865,7 +902,7 @@ class MainWindow(QMainWindow):
         text = word.syllables[si].text
         mid = (len(text) + 1) // 2
         notation, ok = QInputDialog.getText(
-            self, "Split syllable", "Put a '|' where the syllable should be split:",
+            self, '拆分音节', '在需要拆分音节的位置输入“|”：',
             QLineEdit.EchoMode.Normal, f"{text[:mid]}|{text[mid:]}")
         if not ok or notation.count("|") != 1 or notation.replace("|", "") != text:
             return
@@ -892,7 +929,7 @@ class MainWindow(QMainWindow):
     def _tap_mode_changed(self) -> None:
         if not self.tap_mode.currentData():
             if self.tap_index >= 0:
-                self.log("Tap sync stopped")
+                self.log('已停止打拍对齐')
             self.tap_index = -1
             self.tap_prev = -1
             self.tap_pressed = False
@@ -913,7 +950,7 @@ class MainWindow(QMainWindow):
                 self.player.seek(max(0.0, s.start - 2.0))
             self.player.play()
         self.canvas.setFocus()
-        self.log("Tap sync: press Space on each syllable, Esc to stop")
+        self.log('打拍对齐：在每个音节开始时按空格，按 Esc 停止')
         self._update_status()
 
     def _tap(self, press: bool) -> None:
@@ -958,7 +995,7 @@ class MainWindow(QMainWindow):
         if self.tap_index < len(self.canvas.sylls):
             self.canvas.select(self.tap_index, scroll=False)
         else:
-            self.log("Tap sync: reached the last syllable")
+            self.log('打拍对齐：已到达最后一个音节')
             self.tap_mode.setCurrentIndex(0)
         self.lyrics.refresh()
         self._update_status()
@@ -969,7 +1006,7 @@ class MainWindow(QMainWindow):
         if not self.project or not 0 <= row < len(self.project.lines):
             return
         line = self.project.lines[row]
-        dlg = LineEditDialog("Edit line", to_notation(line), line.note, self, line.auto_split,
+        dlg = LineEditDialog('编辑歌词行', to_notation(line), line.note, self, line.auto_split,
                              self.project.language)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
@@ -997,7 +1034,7 @@ class MainWindow(QMainWindow):
             return
         rows = self.lyrics.selected_rows()
         row = rows[-1] if rows else len(self.project.lines) - 1
-        dlg = LineEditDialog("Insert line below", "", parent=self, lang=self.project.language)
+        dlg = LineEditDialog('在下方插入歌词行', "", parent=self, lang=self.project.language)
         if dlg.exec() != QDialog.DialogCode.Accepted or not dlg.text():
             return
         lines = self.project.lines
@@ -1012,7 +1049,7 @@ class MainWindow(QMainWindow):
         self._lines_changed()
         self.lyrics.setCurrentRow(row + 1)
         if not new[0].span():
-            self.log("The new line has no timing yet: select it and use Tap sync, [ / ], or Auto-sync")
+            self.log('新增歌词行尚无时间：选中后使用打拍对齐、[ / ] 或自动对齐设置时间')
 
     def delete_lines(self) -> None:
         rows = self.lyrics.selected_rows()
@@ -1052,23 +1089,44 @@ class MainWindow(QMainWindow):
             self.project.lines[r].backing = on
         self._lines_changed(backing_changed=True)
         if on:
-            self.log("Backing lines stay in the karaoke audio: choose “Karaoke (instrumental + backing)” "
-                     "under Audio to hear it")
+            self.log('和声会保留在卡拉 OK 音轨中，可在“音轨”中选择“卡拉 OK（伴奏 + 和声）”试听')
 
     # ---- pipeline jobs ----------------------------------------------------
 
-    def _run(self, title: str, fn, on_success=None) -> None:
-        self.job = Job(title, fn, self)
-        self.job.message.connect(self.log)
-        self.job.failed.connect(lambda err: QMessageBox.critical(self, f"{title} failed", err))
+    def _run(self, title: str, fn, on_success=None, *, with_progress=False) -> None:
+        self.job = Job(title, fn, self, with_progress=with_progress, capture_downloads=not with_progress)
+        if with_progress:
+            self.download_progress.begin()
+        else:
+            self.download_progress.begin_task(title)
+        self.job.progress.connect(self.download_progress.update_progress)
+        self.job.message.connect(self._job_message)
+        self.job.succeeded.connect(self.download_progress.succeeded)
+        self.job.failed.connect(self.download_progress.failed)
+        self.job.cancelled.connect(self.download_progress.cancelled)
+        self.job.cancelled.connect(lambda: self.log("当前任务已取消。"))
+        self.job.failed.connect(lambda err: QMessageBox.critical(self, f'{title}失败', err))
         if on_success:
             self.job.succeeded.connect(on_success)
-        self.job.finished.connect(self._job_finished)
+        self.job.finished.connect(lambda job=self.job: self._job_finished(job))
         self.log(f"{title}…")
         self.job.start()
         self._set_enabled()
 
-    def _job_finished(self) -> None:
+    def _job_message(self, message: str) -> None:
+        self.log(message)
+        if self.job and not self.job._with_progress:
+            self.download_progress.task_message(message)
+
+    def _cancel_job(self) -> None:
+        if self.job and self.job.isRunning():
+            self.job.requestInterruption()
+            self.download_progress.cancel_button.setEnabled(False)
+            self.download_progress.summary.setText("正在取消任务，等待当前下载或计算步骤响应…")
+
+    def _job_finished(self, job=None) -> None:
+        if job is not None and self.job is not job:
+            return
         self.job = None
         self._set_enabled()
 
@@ -1101,8 +1159,8 @@ class MainWindow(QMainWindow):
             return
         source = dlg.source.text().strip()
         if steps.is_url(source) and not config.download_enabled():
-            QMessageBox.warning(self, "Download disabled",
-                                "Downloading is disabled in this build. Choose an audio file you own.")
+            QMessageBox.warning(self, '不支持在线音频下载',
+                                '当前发行版不支持在线音频下载，请选择你拥有的本地音频文件。')
             return
         out = Path(dlg.out.text() or config.PROJECTS_DIR)
         artist, title, lang = dlg.artist.text() or None, dlg.title.text() or None, dlg.lang.text() or None
@@ -1112,62 +1170,61 @@ class MainWindow(QMainWindow):
             try:
                 steps.fetch_lyrics(proj, log=log)
             except steps.LyricsNotFound as e:
-                log(f"{e}. Use 'Lyrics' to load a file or to transcribe them from the vocals.")
+                log(f'{e}。可点击“歌词”导入歌词文件或从人声转写。')
             return proj.path
 
-        self._run("Creating project", work, lambda path: self.open_project(path))
+        self._run('正在创建项目', work, lambda path: self.open_project(path))
 
     def fetch_lyrics(self) -> None:
         path = self._prepare_job()
         if path is None:
             return
         box = QMessageBox(self)
-        box.setWindowTitle("Lyrics")
-        box.setText("Where should the lyrics come from?\n\nThis replaces the current lyrics and timings.")
+        box.setWindowTitle('歌词')
+        box.setText('请选择歌词来源。\n\n这将替换当前歌词和时间信息。')
         b_lrclib = box.addButton("LRCLIB", QMessageBox.ButtonRole.AcceptRole)
-        b_file = box.addButton("File (.lrc / .txt)…", QMessageBox.ButtonRole.AcceptRole)
-        b_audio = box.addButton("Transcribe from vocals", QMessageBox.ButtonRole.AcceptRole)
-        b_audio.setToolTip("Speech recognition of the vocal stem (better after Separate); "
-                           "check the result line by line")
+        b_file = box.addButton('歌词文件（.lrc / .txt）…', QMessageBox.ButtonRole.AcceptRole)
+        b_audio = box.addButton('从人声转写', QMessageBox.ButtonRole.AcceptRole)
+        b_audio.setToolTip('从人声中识别歌词（建议先分离人声），完成后请逐行核对')
         box.addButton(QMessageBox.StandardButton.Cancel)
         box.exec()
         clicked = box.clickedButton()
         if clicked == b_audio:
             if not self._ensure_ai(self.fetch_lyrics):
                 return
-            self._run("Lyrics from audio",
+            self._run('正在从音频识别歌词',
                       lambda log: steps.lyrics_from_audio(Project.load(path), log=log), self._reload)
             return
         if clicked not in (b_lrclib, b_file):
             return
         lrc_file = None
         if clicked == b_file:
-            f, _ = QFileDialog.getOpenFileName(self, "Lyrics file", "", "Lyrics (*.lrc *.txt)")
+            f, _ = QFileDialog.getOpenFileName(self, '选择歌词文件', "", '歌词文件 (*.lrc *.txt)')
             if not f:
                 return
             lrc_file = Path(f)
-        self._run("Lyrics", lambda log: steps.fetch_lyrics(Project.load(path), lrc_file, log=log),
+        self._run('歌词', lambda log: steps.fetch_lyrics(Project.load(path), lrc_file, log=log),
                   self._reload)
 
     def fix_lyrics(self) -> None:
         if not config.experimental_llm():
             return
-        if not config.openrouter_key():
-            QMessageBox.information(self, "Fix lyrics",
-                                    "This needs an OpenRouter API key (a song costs a fraction of a cent).")
-            if not self.show_settings() or not config.openrouter_key():
+        if not config.llm_available():
+            QMessageBox.information(self, '修正歌词',
+                                    '请先在设置中配置兼容 API 的地址、密钥和模型名称。')
+            if not self.show_settings() or not config.llm_available():
                 return
         if not self._ensure_ai(self.fix_lyrics):
             return
         path = self._prepare_job()
         if path is None or not self.project.lines:
             return
-        self._run("Fix lyrics", lambda log: steps.reconcile(Project.load(path), log=log),
+        self._run('修正歌词', lambda log: steps.reconcile(Project.load(path), log=log),
                   self._review_proposal)
 
     def _review_proposal(self, proposal) -> None:
         if not proposal.changes:
-            QMessageBox.information(self, "Fix lyrics", "The lyrics already match the recording.")
+            QMessageBox.information(self, '修正歌词', '歌词已与录音内容一致。')
             return
         if ProposalDialog(proposal, self).exec() != QDialog.DialogCode.Accepted:
             return
@@ -1175,7 +1232,7 @@ class MainWindow(QMainWindow):
         steps.apply_proposal(self.project, proposal)
         self.dirty = False
         self._set_project_lines()
-        self.log("Lyrics updated: run Auto-sync to time the changed lines")
+        self.log('歌词已更新，请使用“自动对齐”重新设置修改行的时间')
 
     def _set_project_lines(self) -> None:
         self.canvas.refresh()
@@ -1198,31 +1255,24 @@ class MainWindow(QMainWindow):
             return st == "ok"
         if not components.packaged():
             QMessageBox.information(
-                self, "AI components missing",
-                "Vocal separation and syncing need the optional dependencies:\n\n"
-                "uv sync --extra gui --extra separation --extra align --extra gpu\n"
-                "(--extra cpu instead of gpu without an NVIDIA card)")
+                self, '缺少 AI 运行组件',
+                '人声分离和自动对齐需要安装 AI 依赖：\n\nuv sync --extra gui --extra separation --extra align --extra gpu\n（没有 NVIDIA 显卡时，将 gpu 改为 cpu）')
             return False
         if st == "outdated":
-            text = ("This version of AutoKaraoke uses updated AI components. Download the update now?\n"
-                    "(Only what changed is downloaded.)")
+            text = ('当前版本需要更新 AI 运行组件，是否立即下载？\n（仅下载发生变化的部分。）')
         else:
-            size = ("3-4 GB, PyTorch for your NVIDIA card" if components.torch_variant() == "gpu"
-                    else "under 1 GB, PyTorch for the CPU: no NVIDIA card was found, so the AI "
-                         "steps will be slow")
-            text = ("Vocal separation and automatic syncing need the AI components, downloaded "
-                    f"once ({size}).\n\n"
-                    "The models themselves (~5 GB more) are downloaded the first time each step runs.\n\n"
-                    "Download the components now?")
-        if QMessageBox.question(self, "AI components", text) != QMessageBox.StandardButton.Yes:
+            size = ('约 3～4 GB，包含适用于 NVIDIA 显卡的 PyTorch' if components.torch_variant() == "gpu"
+                    else '小于 1 GB，使用 CPU 版 PyTorch；未检测到 NVIDIA 显卡，AI 处理速度会较慢')
+            text = (f'人声分离和自动对齐需要一次性下载 AI 运行组件（{size}）。\n\n模型权重将在首次使用对应功能时另行下载；原软件估算还需约 5 GB，实际大小取决于使用的模型。\n\n是否立即下载运行组件？')
+        if QMessageBox.question(self, 'AI 运行组件', text) != QMessageBox.StandardButton.Yes:
             return st == "outdated"  # the previous components still work
 
         def done(_result) -> None:
-            self.log("AI components ready")
+            self.log('AI 运行组件已就绪')
             if then is not None:
                 QTimer.singleShot(0, then)
 
-        self._run("Downloading AI components", components.install, done)
+        self._run('正在下载 AI 运行组件', components.install, done, with_progress=True)
         return False
 
     def separate(self) -> None:
@@ -1230,7 +1280,7 @@ class MainWindow(QMainWindow):
             return
         path = self._prepare_job()
         if path is not None:
-            self._run("Vocal separation", lambda log: steps.separate(Project.load(path), log=log),
+            self._run('人声分离', lambda log: steps.separate(Project.load(path), log=log),
                       self._reload)
 
     def align(self) -> None:
@@ -1238,14 +1288,14 @@ class MainWindow(QMainWindow):
         if path is None:
             return
         if any(s.confidence >= 0.95 for s in self.canvas.sylls):
-            r = QMessageBox.question(self, "Auto-sync",
-                                     "Auto-sync replaces all timings, including manual edits. Continue?")
+            r = QMessageBox.question(self, '自动对齐',
+                                     '自动对齐将覆盖全部时间信息，包括手动修改的内容。是否继续？')
             if r != QMessageBox.StandardButton.Yes:
                 return
         engine = self.engine.currentData()
         if engine != "naive" and not self._ensure_ai(self.align):
             return
-        self._run("Auto-sync", lambda log: steps.align(Project.load(path), engine, log=log), self._reload)
+        self._run('自动对齐', lambda log: steps.align(Project.load(path), engine, log=log), self._reload)
 
     def render(self) -> None:
         if not self.project or not self.project.path:
@@ -1269,9 +1319,9 @@ class MainWindow(QMainWindow):
         path = self._prepare_job()
         if path is None or not str(out):
             return
-        self._run("Rendering",
+        self._run('正在生成视频',
                   lambda log: steps.render(Project.load(path), out, log=log, style=style),
-                  lambda result: self.log(f"Video ready: {result}"))
+                  lambda result: self.log(f'视频已生成：{result}'))
 
     def export(self) -> None:
         if not self.project:
@@ -1280,13 +1330,13 @@ class MainWindow(QMainWindow):
         from autokaraoke.export.lrc import write_lrc
 
         out, filt = QFileDialog.getSaveFileName(
-            self, "Export synced lyrics", str(self.project.path / f"{self.project.slug}.ass"),
-            "ASS subtitles (*.ass);;Enhanced LRC (*.lrc)",
+            self, '导出已对齐的歌词', str(self.project.path / f"{self.project.slug}.ass"),
+            'ASS 字幕 (*.ass);;增强 LRC 歌词 (*.lrc)',
         )
         if not out:
             return
         (write_lrc if out.endswith(".lrc") else write_ass)(self.project, Path(out))
-        self.log(f"Lyrics exported to {out}")
+        self.log(f'歌词已导出到：{out}')
 
     def show_help(self) -> None:
         HelpDialog(self).exec()

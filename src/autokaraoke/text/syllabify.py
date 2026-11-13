@@ -125,10 +125,16 @@ def syllabify_line(line: str, lang: str) -> list[list[str]]:
 
 
 def detect_language(text: str) -> str:
+    from autokaraoke.text.chinese import script_language
+
+    hint = script_language(text)
+    if hint:
+        return hint
     try:
         from langdetect import DetectorFactory, detect
 
         DetectorFactory.seed = 0
-        return detect(text)
+        language = detect(text)
+        return "zh" if language in ("zh-cn", "zh-tw") else language
     except Exception:
         return ""

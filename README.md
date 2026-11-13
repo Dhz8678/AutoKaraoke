@@ -23,7 +23,19 @@ AutoKaraoke takes an audio file and:
 5. renders a karaoke video with the instrumental, the original and the vocals as switchable
    audio tracks.
 
-It runs locally on your computer: no account, no upload.
+Audio separation, recognition and alignment run locally on your computer. Optional lyric
+correction sends lyric text and a local transcript to the API service you configure.
+
+## 中文增强版
+
+此仓库包含中文界面、AI 组件和模型的实时下载进度、人声分离处理进度、任务取消、
+简体歌词转换，以及可自定义地址、密钥、模型并测试连接的歌词修正 API。
+生成视频窗口可调整字体、字号、字距和行距，并实时预览。
+
+使用方法、下载源、本地模型和验证范围见 **[中文增强版说明](docs/中文增强版说明.md)**。
+这些改动已包含在当前源码中；已有 Releases 的安装包不一定包含本次改动。
+
+![中文排版设置：字号、字距、行距及实时预览](docs/images/zh-render-typography.png)
 
 ## Features
 
@@ -210,14 +222,22 @@ The editor's attack ticks come from a spectral-flux onset detector on the vocal 
 
 ### Lyric check with an LLM (experimental, off by default)
 
-The vocals are transcribed locally (Qwen3-ASR) and a text-only LLM through
-[OpenRouter](https://openrouter.ai) (default `deepseek/deepseek-v4.1-flash`, ~$0.002 per song)
-proposes changes to the lyrics: expanded choruses, removed `[Chorus]` labels, wrong words. You
-accept or reject them one by one. It only edits text, never timing. The results are hit and
-miss, so it is disabled unless you enable it in *File → Settings…* (or set
-`AUTOKARAOKE_EXPERIMENTAL_LLM=1`). Set the key there or as `OPENROUTER_API_KEY` in the
-environment or in a `.env` file (current folder or the config folder). `AUTOKARAOKE_LLM_MODEL`
-picks another model.
+The vocals are transcribed locally (Qwen3-ASR). A text-only LLM proposes changes to the
+lyrics: expanded choruses, removed `[Chorus]` labels, wrong words. You accept or reject them
+one by one. It only edits text, never timing. The results are hit and miss, so it is
+disabled unless you enable it in *File → Settings…* (or set
+`AUTOKARAOKE_EXPERIMENTAL_LLM=1`).
+
+Settings accepts a custom Chat Completions base URL, API key and model, including compatible
+self-hosted services. **Test connection** checks the current inputs without saving them or
+sending lyrics/audio. A local service without authentication can leave the key empty.
+The default service is [OpenRouter](https://openrouter.ai), using
+`deepseek/deepseek-v4.1-flash`; charges depend on the selected provider and model.
+
+Environment or `.env` configuration uses `AUTOKARAOKE_LLM_BASE_URL`,
+`AUTOKARAOKE_LLM_API_KEY` and `AUTOKARAOKE_LLM_MODEL`. The legacy `OPENROUTER_API_KEY` is
+used only for OpenRouter. These settings affect lyric text correction; the audio models
+still run locally. See the [Chinese guide](docs/中文增强版说明.md) for model IDs and download sources.
 
 ### Audio download
 

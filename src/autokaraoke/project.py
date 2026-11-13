@@ -125,7 +125,7 @@ class Project:
         if directory is not None:
             self.path = Path(directory)
         if self.path is None:
-            raise ValueError("project has no directory")
+            raise ValueError("项目尚未指定保存目录")
         self.path.mkdir(parents=True, exist_ok=True)
         out = self.path / PROJECT_FILE
         tmp = out.with_suffix(".tmp")

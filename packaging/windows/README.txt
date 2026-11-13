@@ -1,14 +1,18 @@
-AutoKaraoke for Windows
+AutoKaraoke 中文增强版（Windows 10/11，64 位）
 
-1. Unzip this folder anywhere (e.g. in Documents).
-2. Double-click AutoKaraoke.bat.
-   The first start downloads Python and the editor (about 300 MB) in a console window;
-   later starts open the app directly.
-3. The first time you use Separate or Auto-sync, the app offers to download the AI
-   components (3-4 GB with an NVIDIA card, under 1 GB without) and then the models (about 5 GB).
+1. 解压整个文件夹，双击 AutoKaraoke.bat 启动。
+2. 首次启动下载 Python 和编辑器依赖，约 300 MB。
+3. AI 组件按需安装：NVIDIA 显卡版约 3～4 GB，CPU 版小于 1 GB。
+   下载期间会显示组件完成数量、大文件下载量、百分比和观测平均速度。
+4. 人声分离、识别及对齐模型将在首次使用相应功能时另行下载。
+5. “文件 → 设置”可以配置歌词修正 API 地址、密钥及模型名称。
+   支持兼容 Chat Completions 且能返回 JSON 的本地或远程模型服务。
 
-Projects are saved in Documents\AutoKaraoke. Downloaded components live in
-%LOCALAPPDATA%\AutoKaraoke (delete that folder to uninstall them) and in the uv and
-Hugging Face caches (%LOCALAPPDATA%\uv, %USERPROFILE%\.cache).
+已有安装的用户：请等待当前下载完成后关闭软件，重新启动以加载更新。
+运行环境继续保存在 %LOCALAPPDATA%\AutoKaraoke。
+项目默认保存在 %USERPROFILE%\Documents\AutoKaraoke。
+更详细的下载源、模型说明和配置方法见“中文增强版说明.md”。
 
-Problems? Open an issue on GitHub; the log is in %APPDATA%\autokaraoke\autokaraoke.log
+视频生成工具 FFmpeg 和包管理工具 uv 已随发行包提供。
+请使用你拥有的本地音频文件；发行版不提供流媒体音频下载。
+运行日志：%APPDATA%\autokaraoke\autokaraoke.log

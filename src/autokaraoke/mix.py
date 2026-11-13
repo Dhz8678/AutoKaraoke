@@ -56,7 +56,7 @@ def karaoke_mix(project: Project, out: Path | None = None) -> Path | None:
     a, sr = sf.read(str(inst), dtype="float32", always_2d=True)
     v, sr_v = sf.read(str(voc), dtype="float32", always_2d=True)
     if sr_v != sr:
-        raise ValueError("vocal and instrumental stems have different sample rates")
+        raise ValueError("人声与伴奏音轨的采样率不一致")
     n = min(len(a), len(v))
     if v.shape[1] != a.shape[1]:
         v = np.repeat(v.mean(axis=1, keepdims=True), a.shape[1], axis=1)

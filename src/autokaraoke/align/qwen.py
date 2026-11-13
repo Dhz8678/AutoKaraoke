@@ -66,7 +66,7 @@ class QwenAligner:
     def align(self, segments: list[Segment]) -> list[list[Timing]]:
         for s in segments:
             if len(s.audio) / SAMPLE_RATE > MAX_SECONDS:
-                raise ValueError("segment longer than the aligner limit")
+                raise ValueError("音频片段超过对齐模型支持的长度")
         out: list[list[Timing]] = []
         for i in range(0, len(segments), BATCH_SIZE):
             out.extend(self._align_batch(segments[i : i + BATCH_SIZE]))

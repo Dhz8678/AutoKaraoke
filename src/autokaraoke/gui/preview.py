@@ -52,7 +52,7 @@ class KaraokePreview(QWidget):
 
     def set_style(self, st: AssStyle) -> None:
         self.style_ = st
-        self._measure = TextMeasure(st.font, st.size, st.bold)
+        self._measure = TextMeasure(st.font, st.size, st.bold, st.spacing)
         self.update()
 
     def set_time(self, t: float) -> None:
@@ -97,6 +97,7 @@ class KaraokePreview(QWidget):
         font.setPixelSize(max(1, round(m.em * scale)))
         font.setBold(st.bold)
         font.setItalic(backing)
+        font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, st.spacing * scale)
         left = PLAY_W / 2 - m.width(full) * scale / 2
         baseline = slot_y(st, pl.slot) - m.descent * scale
         waiting = t < pl.active
@@ -105,8 +106,8 @@ class KaraokePreview(QWidget):
         outline = QPen(QColor(st.outline_color), st.outline * 2 * scale)
         prefix = ""
         for text, start, end in ps:
-            x = left + m.width(prefix) * scale
-            w = m.width(text) * scale
+            x = left + m.advance(prefix) * scale
+            w = m.advance(text) * scale
             prefix += text
             path = QPainterPath()
             path.addText(QPointF(x, baseline), font, text)

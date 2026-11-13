@@ -13,6 +13,7 @@ are shared with the editor preview, so the preview matches the video.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 
@@ -28,6 +29,8 @@ class AssStyle:
     font: str = "Noto Sans"
     size: int = 80
     bold: bool = True
+    spacing: float = 0.0  # extra pixels between letters at the 1080p reference size
+    line_spacing: float = 1.6  # distance between lyric baselines, in font sizes
     sung_color: str = "#FFC800"
     unsung_color: str = "#FFFFFF"
     next_color: str = "#9A9AAA"
@@ -51,7 +54,7 @@ class AssStyle:
 
     @property
     def upper_y(self) -> int:
-        return self.lower_y - round(self.size * 1.6)
+        return self.lower_y - round(self.size * self.line_spacing)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -70,6 +73,8 @@ class AssStyle:
                     pass
         if st.layout not in LAYOUTS:
             st.layout = "alternate"
+        st.spacing = min(24.0, max(0.0, st.spacing))
+        st.line_spacing = min(3.0, max(1.2, st.line_spacing))
         return st
 
 
@@ -79,13 +84,26 @@ def default_style_path() -> Path:
     return config.CONFIG_DIR / "render.json"
 
 
-def default_style() -> AssStyle:
-    """Built-in defaults, overridden by the user's saved defaults if any."""
+def _default_style_data() -> dict | None:
     try:
         data = json.loads(default_style_path().read_text(encoding="utf-8"))
     except (OSError, ValueError):
         data = None
-    return AssStyle.from_dict(data if isinstance(data, dict) else None)
+    return data if isinstance(data, dict) else None
+
+
+def default_style() -> AssStyle:
+    """Built-in defaults, overridden by the user's saved defaults if any."""
+    return AssStyle.from_dict(_default_style_data())
+
+
+def chinese_typography(base: AssStyle | None = None) -> AssStyle:
+    """Comfortable Chinese typography without changing colours/video settings."""
+    st = AssStyle.from_dict(None, base)
+    st.font = "Microsoft YaHei" if os.name == "nt" else "Noto Sans CJK SC"
+    st.size, st.bold, st.spacing, st.line_spacing = 72, False, 4.0, 1.9
+    st.outline, st.shadow = 2.0, 0.5
+    return st
 
 
 def save_default_style(st: AssStyle) -> Path:
@@ -96,7 +114,13 @@ def save_default_style(st: AssStyle) -> Path:
 
 
 def project_style(project: Project) -> AssStyle:
-    return AssStyle.from_dict(project.render, default_style())
+    from autokaraoke.text.chinese import script_language
+
+    chinese = project.language.lower().startswith("zh") or script_language(
+        "\n".join(line.text for line in project.lines)) == "zh"
+    base = chinese_typography() if chinese else AssStyle()
+    saved = AssStyle.from_dict(_default_style_data(), base)
+    return AssStyle.from_dict(project.render, saved)
 
 
 def ass_color(rgb: str, alpha: int = 0) -> str:
@@ -221,7 +245,7 @@ def syllable_starts(line: Line, measure, parens: bool = False) -> tuple[list[flo
     left = PLAY_W / 2 - measure.width(full) * scale / 2
     starts, prefix = [], ""
     for text, _, _ in ps:
-        starts.append(left + measure.width(prefix) * scale)
+        starts.append(left + (measure.advance(prefix) if hasattr(measure, "advance") else measure.width(prefix)) * scale)
         prefix += text
     return starts, left, scale
 
@@ -337,7 +361,7 @@ def build_ass(project: Project, style: AssStyle | None = None, measure=None) -> 
     if measure is None:
         from autokaraoke.fonts import TextMeasure
 
-        measure = TextMeasure(st.font, st.size, st.bold)
+        measure = TextMeasure(st.font, st.size, st.bold, st.spacing)
     places = schedule(project, st)
 
     events: list[str] = []
@@ -390,12 +414,12 @@ Title: {_escape(project.artist)} - {_escape(project.title)}
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Karaoke,{st.font},{st.size},{sung},{unsung},{outline},{shade},{bold},0,0,0,100,100,0,0,1,{st.outline},{st.shadow},2,40,40,0,1
-Style: Backing,{st.font},{st.size},{sung},{backing_c},{outline},{shade},{bold},-1,0,0,100,100,0,0,1,{st.outline},{st.shadow},2,40,40,0,1
-Style: Next,{st.font},{st.size},{nxt},{nxt},{outline},{shade},{bold},0,0,0,100,100,0,0,1,{st.outline},{st.shadow},2,40,40,0,1
+Style: Karaoke,{st.font},{st.size},{sung},{unsung},{outline},{shade},{bold},0,0,0,100,100,{st.spacing},0,1,{st.outline},{st.shadow},2,40,40,0,1
+Style: Backing,{st.font},{st.size},{sung},{backing_c},{outline},{shade},{bold},-1,0,0,100,100,{st.spacing},0,1,{st.outline},{st.shadow},2,40,40,0,1
+Style: Next,{st.font},{st.size},{nxt},{nxt},{outline},{shade},{bold},0,0,0,100,100,{st.spacing},0,1,{st.outline},{st.shadow},2,40,40,0,1
 Style: Ball,{st.font},{st.size},{ball_c},{ball_c},{outline},{shade},0,0,0,0,100,100,0,0,1,{max(1.0, st.outline / 2)},0,5,0,0,0,1
 Style: Countdown,{st.font},{st.size // 2},{sung},{sung},{outline},{shade},{bold},0,0,0,100,100,0,0,1,{st.outline / 2},0,2,40,40,0,1
-Style: Title,{st.font},{st.size * 3 // 2},{unsung},{unsung},{outline},{shade},{bold},0,0,0,100,100,0,0,1,{st.outline},{st.shadow},5,40,40,0,1
+Style: Title,{st.font},{st.size * 3 // 2},{unsung},{unsung},{outline},{shade},{bold},0,0,0,100,100,{st.spacing},0,1,{st.outline},{st.shadow},5,40,40,0,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text

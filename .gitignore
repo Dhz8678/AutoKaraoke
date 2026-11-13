@@ -9,4 +9,14 @@ build/
 projects/
 models/
 .env
+.env.*
+!.env.example
+!.env.sample
 packaging/.cache/
+# Local agent work, installation records and screenshots with machine settings
+.codex/
+release/local-validation*.json
+release/typography-validation.json
+docs/images/zh-settings.png
+docs/images/zh-settings-test.png
+docs/images/zh-settings-test-success.png

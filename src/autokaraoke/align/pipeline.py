@@ -45,7 +45,7 @@ def make_aligner(engine: str, language: str = "") -> Aligner:
         from autokaraoke.align.ctc import CtcAligner
 
         return CtcAligner(language=language)
-    raise ValueError(f"unknown aligner: {engine}")
+    raise ValueError(f"未知的对齐引擎：{engine}")
 
 
 def _rms(audio: np.ndarray) -> np.ndarray:
@@ -71,8 +71,8 @@ def _whole_song_pass(aligner: Aligner, audio: np.ndarray, lines: list[Line]) -> 
     duration = len(audio) / SAMPLE_RATE
     if duration > 290:
         raise ValueError(
-            "Plain (unsynced) lyrics are only supported for songs up to ~4:50; "
-            "provide synced LRC lyrics or sync line starts in the editor."
+            "无时间信息的纯文本歌词仅支持时长约 4 分 50 秒以内的歌曲；"
+            "请提供带时间信息的 LRC 歌词，或在编辑器中设置各行的开始时间。"
         )
     units = [s.text for ln in lines for s in ln.syllables()]
     pad = np.zeros(SAMPLE_RATE, np.float32)  # keeps the first unit off the window edge
@@ -99,15 +99,15 @@ def align_project(
     report = progress or (lambda f, msg: None)
     path = project.abspath(project.audio_vocals) or project.abspath(project.audio_full)
     if path is None:
-        raise ValueError("project has no audio")
-    report(0.0, "Loading audio")
+        raise ValueError("项目中没有音频")
+    report(0.0, "正在加载音频")
     audio = load_mono(path)
     rms = _rms(audio)
 
     lines = [ln for ln in project.lines if ln.syllables()]
     lrc_starts = [ln.start for ln in lines]
     if any(s is None for s in lrc_starts):
-        report(0.05, "Locating lines (whole-song pass)")
+        report(0.05, "正在定位歌词行（全曲分析）")
         _whole_song_pass(aligner, audio, lines)
         lrc_starts = [None] * len(lines)
 
@@ -123,7 +123,7 @@ def align_project(
         segments.append(_segment(audio, anchors[lo][0] - PAD_BEFORE, anchors[hi - 1][1] + PAD_AFTER,
                                  units, pad=lo == 0))
         spans.append((offset, offset + len(line.syllables())))
-    report(0.1, f"Aligning {len(lines)} lines")
+    report(0.1, f"正在对齐 {len(lines)} 行歌词")
     primary = [res[a:b] for (a, b), res in zip(spans, aligner.align(segments))]
     ok = [_plausible(r, seg, lrc) for r, seg, lrc in zip(primary, segments, lrc_starts)]
 
@@ -136,14 +136,14 @@ def align_project(
     failed = [i for i in range(len(lines)) if not ok[i]]
     retried: dict[int, list[Timing]] = {}
     if failed:
-        report(0.4, f"Retrying {len(failed)} lines alone")
+        report(0.4, f"正在单独重试 {len(failed)} 行歌词")
         for i, res in zip(failed, aligner.align([tight[i] for i in failed])):
             if _plausible(res, tight[i], lrc_starts[i]):
                 retried[i] = res
 
     second: list[list[Timing] | None] = [None] * len(lines)
     if secondary is not None:
-        report(0.6, f"Cross-checking with {secondary.name}")
+        report(0.6, f"正在使用 {secondary.name} 交叉校验")
         for i, res in enumerate(secondary.align(tight)):
             if _plausible(res, tight[i], lrc_starts[i]):
                 second[i] = res
@@ -171,7 +171,7 @@ def align_project(
                 s.confidence *= 0.5
         line.start, line.end = sylls[0].start, sylls[-1].end
     _fix_line_overlaps(lines)
-    report(1.0, "Done")
+    report(1.0, "已完成")
 
 
 def _cross_check(sylls: list[Syllable], other: list[Timing]) -> None:

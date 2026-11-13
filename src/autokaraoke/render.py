@@ -40,7 +40,7 @@ def render(
     ]
     tracks = [(p, title) for p, title in tracks if p and p.exists()]
     if not tracks:
-        raise RuntimeError("project has no audio")
+        raise RuntimeError("项目中没有音频")
     duration = project.duration or probe_duration(tracks[0][0])
     size = f"{st.width}x{st.height}"
 

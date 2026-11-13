@@ -137,7 +137,7 @@ def split_syllable(word: Word, index: int, pos: int) -> None:
     """Split ``word.syllables[index]`` before character ``pos``; the time is cut proportionally."""
     syl = word.syllables[index]
     if not 0 < pos < len(syl.text):
-        raise ValueError("split position must be inside the syllable")
+        raise ValueError("拆分位置必须位于音节内部")
     a, b = Syllable(text=syl.text[:pos]), Syllable(text=syl.text[pos:])
     if syl.start is not None and syl.end is not None:
         cut = syl.start + (syl.end - syl.start) * pos / len(syl.text)

@@ -11,7 +11,7 @@ from pathlib import Path
 def require_ffmpeg() -> None:
     for tool in ("ffmpeg", "ffprobe"):
         if shutil.which(tool) is None:
-            raise RuntimeError(f"{tool} not found in PATH")
+            raise RuntimeError(f"未在 PATH 中找到 {tool}，请确认已正确安装。")
 
 
 def probe_duration(path: Path) -> float:

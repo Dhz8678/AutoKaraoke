@@ -33,8 +33,7 @@ class LyricsPanel(QListWidget):
         self.setContextMenuPolicy(Qt.ContextMenuPolicy.ActionsContextMenu)
         self.itemClicked.connect(lambda it: self.lineActivated.emit(self.row(it)))
         self.itemDoubleClicked.connect(lambda it: self.editRequested.emit(self.row(it)))
-        self.setToolTip("Click: go to line. Double-click / Enter: edit text and syllables.\n"
-                        "Right-click: insert, delete, merge lines, mark as backing vocals.")
+        self.setToolTip('单击跳转到本行，双击或按 Enter 编辑歌词及音节。\n右键可插入、删除、合并歌词行或标记和声。')
 
     def set_project(self, project: Project | None) -> None:
         self.project = project
@@ -63,11 +62,11 @@ class LyricsPanel(QListWidget):
                 color = confidence_color(worst)
                 color.setAlpha(70)
                 item.setBackground(QBrush(color))
-                tips.append("Some syllables need review")
+                tips.append('部分音节需要复核')
             if line.backing:
-                tips.append("Backing vocals: kept in the karaoke mix, shown in the video as backing")
+                tips.append('和声：保留在卡拉 OK 音轨中，并在视频中以和声样式显示')
             if line.note:
-                tips.append(line.note + " (double-click to edit the line)")
+                tips.append(line.note + '（双击编辑本行）')
             if tips:
                 item.setToolTip("\n".join(tips))
             self.addItem(item)

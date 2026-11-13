@@ -40,15 +40,11 @@ DIVIDER_PX = 4
 BACKING = QColor(90, 150, 255)
 
 HINTS = {
-    "move": "Drag: move the syllable, its start snaps to the cyan ticks (Ctrl: no snap) · "
-            "Double-click: play it · Right-click: more",
-    "start": "Drag: move the start, snaps to the cyan ticks (Ctrl: no snap; Alt: detach from the "
-             "touching neighbour)",
-    "end": "Drag: move the end, snaps to the cyan ticks (Ctrl: no snap; Alt: detach from the "
-           "touching neighbour)",
-    "divider": "Drag: resize the syllable lane",
-    "": "Click: seek · Wheel: scroll · Ctrl+wheel: zoom · Select a syllable, then "
-        "[ / ] set its start / end at the playhead",
+    "move": '拖动以移动音节，起点吸附到青色标记（Ctrl：不吸附）；双击播放，右键查看更多操作',
+    "start": '拖动以调整开始时间并吸附到青色标记（Ctrl：不吸附；Alt：与相邻音节分离）',
+    "end": '拖动以调整结束时间并吸附到青色标记（Ctrl：不吸附；Alt：与相邻音节分离）',
+    "divider": '拖动以调整音节轨道高度',
+    "": '单击跳转，滚轮滚动，Ctrl + 滚轮缩放；选中音节后用 [ / ] 将播放头位置设为开始／结束时间',
 }
 
 

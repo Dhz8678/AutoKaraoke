@@ -149,6 +149,10 @@ def build_windows(work: Path) -> Path:
     licenses(root / "licenses", ffmpeg)
     for f in (HERE / "windows").iterdir():
         shutil.copy2(f, root / f.name)
+    shutil.copy2(ROOT / "docs" / "中文增强版说明.md", root / "中文增强版说明.md")
+    (root / "images").mkdir(exist_ok=True)
+    shutil.copy2(ROOT / "docs" / "images" / "zh-render-typography.png",
+                 root / "images" / "zh-render-typography.png")
     out = DIST / f"{name}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
         for f in sorted(root.rglob("*")):

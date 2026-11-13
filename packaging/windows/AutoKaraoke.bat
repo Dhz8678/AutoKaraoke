@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 rem AutoKaraoke launcher. First start: uv installs Python and the editor libraries
 rem (about 300 MB) into %LOCALAPPDATA%\AutoKaraoke; the AI components are downloaded
 rem from inside the app.
@@ -19,11 +20,11 @@ set "PYTHONPATH=%APP%\src"
 set "PYTHONHOME="
 
 if not exist "%DATA%\venv\.autokaraoke-base-%LOCK_HASH%" (
-    echo Preparing AutoKaraoke: first start or update, downloads about 300 MB...
+    echo 正在准备 AutoKaraoke：首次启动或更新约需下载 300 MB...
     "%AUTOKARAOKE_UV%" sync --project "%APP%" --frozen --no-install-project --no-dev --inexact --extra gui
     if errorlevel 1 (
         echo.
-        echo Setup failed. Check your internet connection and try again.
+        echo 安装失败，请检查网络连接后重试。
         pause
         exit /b 1
     )

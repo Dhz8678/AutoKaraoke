@@ -55,7 +55,7 @@ Answer with JSON only:
  "doubts": [{"line": 7, "heard": "what the transcript has there"}]}
 - "from": index of the published line this line comes from (also when you edit or repeat it), or null for a new line.
 - "start": your estimate of when the line starts, in seconds, read from the transcript (null if unknown).
-- "notes": at most 10 short items, written in the language of the lyrics, empty if nothing changed.
+- "notes": at most 10 short items, written in Simplified Chinese, empty if nothing changed. Never translate the sung lyrics.
 - "doubts": index in YOUR "lines" list and the transcript text, for lines a human should listen to.
 """
 
@@ -103,7 +103,7 @@ class Proposal:
                 if e.doubt.accepted:
                     ln = make_line(e.doubt.new, self.language, start=ln.start, end=ln.end)
                 else:
-                    ln.note = f"Transcript heard: {e.doubt.new}"
+                    ln.note = f"语音识别结果：{e.doubt.new}"
             out.append(ln)
         return out
 
@@ -144,7 +144,7 @@ def apply_reply(project: Project, transcript: Transcript, reply: dict) -> Propos
         hint = float(hint) if isinstance(hint, (int, float)) and 0 <= hint <= project.duration else None
         items.append((_norm(str(it["text"])), src, hint))
     if not items:
-        raise ValueError("the model returned no lyrics")
+        raise ValueError("模型未返回歌词内容")
 
     # Published lines keep their (LRC or aligned) start on first use; everything else is placed
     # by matching the text in the transcript, falling back to the model's estimate.
