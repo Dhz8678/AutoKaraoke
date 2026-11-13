@@ -92,7 +92,11 @@ class Transcriber:
         import torch
         from qwen_asr import Qwen3ASRModel
 
-        device = device or ("cuda:0" if torch.cuda.is_available() else "cpu")
+        # ASR and its timestamp aligner stay loaded together. A 4 GB GPU can run
+        # the smaller aligner alone, but cannot hold these two models together.
+        if device is None:
+            enough_vram = torch.cuda.is_available() and torch.cuda.get_device_properties(0).total_memory >= 8 * 1024**3
+            device = "cuda:0" if enough_vram else "cpu"
         dtype = torch.bfloat16 if device.startswith("cuda") else torch.float32
         self._model = Qwen3ASRModel.from_pretrained(
             MODEL_ID,

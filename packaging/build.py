@@ -147,8 +147,8 @@ def build_windows(work: Path) -> Path:
     extract_members(fetch(UV_URL.format(v=UV_VERSION, name=UV["windows"]), f"{UV_VERSION}-{UV['windows']}"),
                     {"uv.exe": root / "bin" / "uv.exe"})
     licenses(root / "licenses", ffmpeg)
-    for f in (HERE / "windows").iterdir():
-        shutil.copy2(f, root / f.name)
+    for name in ("AutoKaraoke.bat", "README.txt"):
+        shutil.copy2(HERE / "windows" / name, root / name)
     shutil.copy2(ROOT / "docs" / "中文增强版说明.md", root / "中文增强版说明.md")
     (root / "images").mkdir(exist_ok=True)
     shutil.copy2(ROOT / "docs" / "images" / "zh-render-typography.png",

@@ -74,9 +74,14 @@ correction sends lyric text and a local transcript to the API service you config
 
 | System | Package | |
 |---|---|---|
-| Linux (x86-64) | `AutoKaraoke-<version>-x86_64.AppImage` | [Releases](../../releases/latest) |
-| Windows 10/11 (x64) | `AutoKaraoke-<version>-windows-x64.zip` | [Releases](../../releases/latest) |
+| Linux (x86-64), original edition | `AutoKaraoke-<version>-x86_64.AppImage` | [Upstream releases](https://github.com/GiacoBot/AutoKaraoke/releases) |
+| Windows 10/11 (x64), offline / 离线完整版 | `AutoKaraoke-<version>-windows-x64-offline-Setup.exe` + all matching `.bin` files | [Releases](../../releases/latest) |
+| Windows 10/11 (x64), BAT / 联网按需下载版 | `AutoKaraoke-<version>-windows-x64-online.zip` | [Releases](../../releases/latest) |
 | macOS | not packaged yet: [run it from source](#run-from-source) (untested) | |
+
+**Windows 离线版**内置运行环境、FFmpeg 和全部四类音频模型。将 EXE 和全部同名 BIN 分卷放在同一文件夹，双击 EXE 安装即可。
+GitHub 单附件限制为 2 GiB，因此完整版以安装 EXE 加数据分卷提供。**BAT 联网版**仍然保留，首次使用时按需下载。
+使用、硬件要求和重现构建见 [Windows 发行说明](packaging/WINDOWS.md)。
 
 ### Requirements
 
