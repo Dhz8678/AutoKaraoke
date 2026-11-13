@@ -6,6 +6,7 @@ Nothing is copied from user settings or song/project directories.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import importlib.metadata
 import json
@@ -27,12 +28,31 @@ def digest(path: Path) -> str:
 
 
 def copy_tree(source: Path, destination: Path) -> None:
-    shutil.copytree(source, destination, dirs_exist_ok=True,
-                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc", ".cache", "direct_url.json", "*.log"))
+    pairs = []
+    for current, directories, files in os.walk(source):
+        directories[:] = [name for name in directories if name not in (
+            "__pycache__", ".cache", "objects-Debug", "objects-RelWithDebInfo")]
+        folder = destination / Path(current).relative_to(source)
+        folder.mkdir(parents=True, exist_ok=True)
+        for name in files:
+            if name.endswith((".pyc", ".log", ".obj")) or name == "direct_url.json":
+                continue
+            pairs.append((Path(current) / name, folder / name))
+
+    def copy(pair):
+        origin, target = pair
+        if target.exists():
+            old, new = target.stat(), origin.stat()
+            if old.st_size == new.st_size and old.st_mtime_ns == new.st_mtime_ns:
+                return
+        shutil.copy2(origin, target)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        list(pool.map(copy, pairs))
 
 
 def stage_app(snapshot: Path, destination: Path) -> str:
-    destination.mkdir(parents=True)
+    destination.mkdir(parents=True, exist_ok=True)
     for name in ("pyproject.toml", "uv.lock", ".python-version", "README.md", "LICENSE"):
         shutil.copy2(snapshot / name, destination / name)
     copy_tree(snapshot / "src", destination / "src")
@@ -56,6 +76,7 @@ def main():
     parser.add_argument("--iscc", type=Path, required=True)
     parser.add_argument("--stage-only", action="store_true")
     parser.add_argument("--reuse-stage", action="store_true")
+    parser.add_argument("--resume-staging", action="store_true", help="Resume an incomplete stage; never alter a completed manifest")
     options = parser.parse_args()
     if os.name != "nt":
         parser.error("Build this edition on Windows")
@@ -67,28 +88,28 @@ def main():
     assets = output / "assets"
     assets.mkdir(exist_ok=True)
     if not options.reuse_stage:
-        if stage.exists():
+        if stage.exists() and (not options.resume_staging or (stage / "package-manifest.json").exists()):
             raise RuntimeError("Stage already exists. Use a new output path or --reuse-stage; existing files are never overwritten.")
-        snapshot = output / "source-snapshot"
-        archive = output / "source.tar"
         git = ["git", "-c", "safe.directory=" + ROOT.as_posix()]
         commit = subprocess.check_output(git + ["rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
+        snapshot = output / ("source-snapshot-" + commit[:12])
+        archive = output / ("source-" + commit[:12] + ".tar")
         subprocess.run(git + ["archive", "--format=tar", "--output", str(archive), commit], cwd=ROOT, check=True)
-        snapshot.mkdir()
+        snapshot.mkdir(exist_ok=True)
         with tarfile.open(archive) as source:
             source.extractall(snapshot, filter="data")
         # Packaging helpers are required to be committed before creating a release.
         assert (snapshot / "packaging/windows/OfflineLauncher.cs").is_file()
-        stage.mkdir()
+        stage.mkdir(exist_ok=True)
         stage_app(snapshot, stage / "app")
         copy_tree(snapshot / "docs", stage / "app" / "docs")
         licenses = stage / "licenses"
-        licenses.mkdir()
+        licenses.mkdir(exist_ok=True)
         shutil.copy2(snapshot / "LICENSE", licenses / "AutoKaraoke-LICENSE.txt")
         shutil.copy2(snapshot / "packaging/THIRD-PARTY.txt", licenses / "THIRD-PARTY.txt")
         shutil.copy2(options.existing_release / "licenses/ffmpeg-LICENSE.txt", licenses / "ffmpeg-LICENSE.txt")
         bin_dir = stage / "bin"
-        bin_dir.mkdir()
+        bin_dir.mkdir(exist_ok=True)
         for name in ("ffmpeg.exe", "ffprobe.exe"):
             shutil.copy2(options.existing_release / "bin" / name, bin_dir / name)
         print("Copying the private, relocatable Python runtime and AI libraries...", flush=True)
