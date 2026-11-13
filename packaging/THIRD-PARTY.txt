@@ -1,6 +1,16 @@
 Third-party software in the AutoKaraoke release packages
 ========================================================
 
+Original application and this modified fork
+  Original AutoKaraoke by GiacoBot and its contributors:
+    https://github.com/GiacoBot/AutoKaraoke
+  Chinese-language enhancements maintained in:
+    https://github.com/Dhz8678/AutoKaraoke
+  This fork adds Chinese UI, live progress and cancellation, custom lyric API
+  configuration and connection tests, simplified Chinese lyrics, and typography fixes.
+  It retains the original Git history and GPL-3.0-or-later license.
+  See AutoKaraoke-LICENSE.txt in the release package for the license text.
+
 FFmpeg (ffmpeg, ffprobe)
   GPL build by BtbN: https://github.com/BtbN/FFmpeg-Builds
   License: GNU GPL v3, see ffmpeg-LICENSE.txt. Source: https://ffmpeg.org/download.html

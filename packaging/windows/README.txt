@@ -1,5 +1,11 @@
 AutoKaraoke 中文增强版（Windows 10/11，64 位）
 
+项目来源：https://github.com/GiacoBot/AutoKaraoke
+原项目作者：GiacoBot 及其贡献者。
+中文增强仓库：https://github.com/Dhz8678/AutoKaraoke
+本版本在原项目基础上增加汉化、进度显示、自定义歌词修正 API、简体转换和中文排版修复。
+保留原项目历史，沿用 GPL-3.0-or-later；许可证及第三方说明见 licenses 目录。
+
 1. 解压整个文件夹，双击 AutoKaraoke.bat 启动。
 2. 首次启动下载 Python 和编辑器依赖，约 300 MB。
 3. AI 组件按需安装：NVIDIA 显卡版约 3～4 GB，CPU 版小于 1 GB。

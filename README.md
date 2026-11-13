@@ -4,6 +4,14 @@
 
 <h1 align="center">AutoKaraoke</h1>
 
+> **项目来源**：本仓库基于 [GiacoBot/AutoKaraoke](https://github.com/GiacoBot/AutoKaraoke)，
+> 原项目由 [GiacoBot](https://github.com/GiacoBot) 及其贡献者开发。
+> [Dhz8678/AutoKaraoke](https://github.com/Dhz8678/AutoKaraoke) 是在原项目基础上维护的中文增强衍生版本，
+> 保留原项目历史与 [GPL-3.0-or-later 许可证](LICENSE)。
+>
+> This is a modified Chinese-language fork of [GiacoBot/AutoKaraoke](https://github.com/GiacoBot/AutoKaraoke).
+> Credit for the original application belongs to GiacoBot and its contributors.
+
 <p align="center">
   Turn a song you own into a karaoke video, synced syllable by syllable.<br>
   AI does the rough work, you do the fine-tuning.
@@ -27,6 +35,9 @@ Audio separation, recognition and alignment run locally on your computer. Option
 correction sends lyric text and a local transcript to the API service you configure.
 
 ## 中文增强版
+
+本次增强基于上游提交 [`3b7098f`](https://github.com/GiacoBot/AutoKaraoke/commit/3b7098f8a4847bc7d55238c6860a5f8b22cf5dc7)。
+原项目提供音频分离、歌词获取、音节对齐、时间轴编辑和视频生成；本分支在这些功能上进行以下修改。
 
 此仓库包含中文界面、AI 组件和模型的实时下载进度、人声分离处理进度、任务取消、
 简体歌词转换，以及可自定义地址、密钥、模型并测试连接的歌词修正 API。
